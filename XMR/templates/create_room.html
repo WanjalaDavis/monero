@@ -1,0 +1,2444 @@
+<!-- create_room.html -->
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if current_room %}⚙️ {{ current_room.name }}{% else %}✨ New Room{% endif %} | Monero Chat</title>
+    
+    <!-- Bootstrap 5 + Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    
+    <!-- Font Awesome 6 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Animate.css -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <!-- AOS -->
+    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+    
+    <!-- SweetAlert2 -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    
+    <style>
+        /* ========== THEME VARIABLES ========== */
+        :root {
+            /* Light Theme (Default) */
+            --primary-100: #ffe6d5;
+            --primary-200: #ffcdab;
+            --primary-300: #ffb482;
+            --primary-400: #ff9b59;
+            --primary-500: #f26822;
+            --primary-600: #d4541c;
+            --primary-700: #b64116;
+            --primary-800: #982e10;
+            --primary-900: #7a1b0a;
+            --primary-rgb: 242, 104, 34;
+            
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8f9fa;
+            --bg-tertiary: #e9ecef;
+            --bg-card: rgba(255, 255, 255, 0.9);
+            --bg-sidebar: #ffffff;
+            
+            --text-primary: #212529;
+            --text-secondary: #495057;
+            --text-muted: #6c757d;
+            --text-inverse: #ffffff;
+            
+            --border-light: #dee2e6;
+            --border-color: #ced4da;
+            
+            --shadow-sm: 0 2px 4px rgba(0,0,0,0.05);
+            --shadow-md: 0 4px 6px rgba(0,0,0,0.07);
+            --shadow-lg: 0 10px 15px rgba(0,0,0,0.1);
+            --shadow-xl: 0 20px 25px rgba(0,0,0,0.15);
+            
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --info: #3b82f6;
+            
+            --sidebar-width: 280px;
+            --header-height: 70px;
+            --border-radius: 16px;
+        }
+
+        /* Dark Theme */
+        [data-theme="dark"] {
+            --primary-100: #7a1b0a;
+            --primary-200: #982e10;
+            --primary-300: #b64116;
+            --primary-400: #d4541c;
+            --primary-500: #f26822;
+            --primary-600: #ff9b59;
+            --primary-700: #ffb482;
+            --primary-800: #ffcdab;
+            --primary-900: #ffe6d5;
+            --primary-rgb: 242, 104, 34;
+            
+            --bg-primary: #0a0b0e;
+            --bg-secondary: #141519;
+            --bg-tertiary: #1e1f26;
+            --bg-card: rgba(30, 31, 38, 0.95);
+            --bg-sidebar: #1a1b20;
+            
+            --text-primary: #e4e6eb;
+            --text-secondary: #b0b3b8;
+            --text-muted: #8a8d94;
+            --text-inverse: #212529;
+            
+            --border-light: #2a2b32;
+            --border-color: #3a3b45;
+            
+            --shadow-sm: 0 2px 4px rgba(0,0,0,0.3);
+            --shadow-md: 0 4px 6px rgba(0,0,0,0.4);
+            --shadow-lg: 0 10px 15px rgba(0,0,0,0.5);
+            --shadow-xl: 0 20px 25px rgba(0,0,0,0.6);
+        }
+
+        /* Monochrome Theme */
+        [data-theme="monochrome"] {
+            --primary-100: #f5f5f5;
+            --primary-200: #e5e5e5;
+            --primary-300: #d4d4d4;
+            --primary-400: #a3a3a3;
+            --primary-500: #737373;
+            --primary-600: #525252;
+            --primary-700: #404040;
+            --primary-800: #262626;
+            --primary-900: #171717;
+            --primary-rgb: 115, 115, 115;
+        }
+
+        /* Ocean Theme */
+        [data-theme="ocean"] {
+            --primary-100: #cffafe;
+            --primary-200: #a5f3fc;
+            --primary-300: #67e8f9;
+            --primary-400: #22d3ee;
+            --primary-500: #06b6d4;
+            --primary-600: #0891b2;
+            --primary-700: #0e7490;
+            --primary-800: #155e75;
+            --primary-900: #164e63;
+            --primary-rgb: 6, 182, 212;
+        }
+
+        /* Forest Theme */
+        [data-theme="forest"] {
+            --primary-100: #dcfce7;
+            --primary-200: #bbf7d0;
+            --primary-300: #86efac;
+            --primary-400: #4ade80;
+            --primary-500: #22c55e;
+            --primary-600: #16a34a;
+            --primary-700: #15803d;
+            --primary-800: #166534;
+            --primary-900: #14532d;
+            --primary-rgb: 34, 197, 94;
+        }
+
+        /* Royal Theme */
+        [data-theme="royal"] {
+            --primary-100: #f3e8ff;
+            --primary-200: #e9d5ff;
+            --primary-300: #d8b4fe;
+            --primary-400: #c084fc;
+            --primary-500: #a855f7;
+            --primary-600: #9333ea;
+            --primary-700: #7e22ce;
+            --primary-800: #6b21a5;
+            --primary-900: #581c87;
+            --primary-rgb: 168, 85, 247;
+        }
+
+        /* Dark theme overrides for color themes */
+        [data-theme="dark"][data-theme="ocean"] {
+            --primary-100: #164e63;
+            --primary-200: #155e75;
+            --primary-300: #0e7490;
+            --primary-400: #0891b2;
+            --primary-500: #06b6d4;
+            --primary-600: #22d3ee;
+            --primary-700: #67e8f9;
+            --primary-800: #a5f3fc;
+            --primary-900: #cffafe;
+        }
+
+        [data-theme="dark"][data-theme="forest"] {
+            --primary-100: #14532d;
+            --primary-200: #166534;
+            --primary-300: #15803d;
+            --primary-400: #16a34a;
+            --primary-500: #22c55e;
+            --primary-600: #4ade80;
+            --primary-700: #86efac;
+            --primary-800: #bbf7d0;
+            --primary-900: #dcfce7;
+        }
+
+        [data-theme="dark"][data-theme="royal"] {
+            --primary-100: #581c87;
+            --primary-200: #6b21a5;
+            --primary-300: #7e22ce;
+            --primary-400: #9333ea;
+            --primary-500: #a855f7;
+            --primary-600: #c084fc;
+            --primary-700: #d8b4fe;
+            --primary-800: #e9d5ff;
+            --primary-900: #f3e8ff;
+        }
+
+        [data-theme="dark"][data-theme="monochrome"] {
+            --bg-primary: #171717;
+            --bg-secondary: #262626;
+            --bg-tertiary: #404040;
+            --bg-card: rgba(38, 38, 38, 0.95);
+            --bg-sidebar: #1f1f1f;
+            --text-primary: #f5f5f5;
+            --text-secondary: #e5e5e5;
+            --text-muted: #a3a3a3;
+            --border-light: #404040;
+            --border-color: #525252;
+        }
+
+        /* ========== BASE STYLES ========== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+            transition: background-color 0.3s ease, color 0.3s ease;
+            overflow-x: hidden;
+        }
+
+        /* ========== LAYOUT ========== */
+        .app-wrapper {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: var(--sidebar-width);
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border-light);
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+            transition: transform 0.3s ease;
+            z-index: 1000;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .sidebar-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border-light);
+        }
+
+        .sidebar-header h3 {
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 700;
+            color: var(--primary-500);
+            margin: 0;
+            font-size: 1.5rem;
+        }
+
+        .sidebar-header small {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        .sidebar-nav {
+            padding: 1rem 0;
+        }
+
+        .nav-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .nav-section-title {
+            padding: 0.5rem 1.5rem;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem 1.5rem;
+            color: var(--text-secondary);
+            text-decoration: none;
+            transition: all 0.2s ease;
+            position: relative;
+            margin: 0.25rem 0.75rem;
+            border-radius: var(--border-radius);
+        }
+
+        .nav-item:hover {
+            background: var(--bg-tertiary);
+            color: var(--primary-500);
+            transform: translateX(5px);
+        }
+
+        .nav-item.active {
+            background: var(--primary-500);
+            color: white;
+            box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);
+        }
+
+        .nav-item i {
+            width: 24px;
+            font-size: 1.25rem;
+            margin-right: 12px;
+        }
+
+        .nav-item .badge {
+            margin-left: auto;
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 20px;
+        }
+
+        .nav-item.active .badge {
+            background: rgba(255,255,255,0.2);
+            color: white;
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            margin-left: var(--sidebar-width);
+            padding: 2rem;
+            transition: margin-left 0.3s ease;
+        }
+
+        /* Top Bar */
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 2rem;
+            padding: 1rem;
+            background: var(--bg-card);
+            backdrop-filter: blur(10px);
+            border-radius: var(--border-radius);
+            border: 1px solid var(--border-light);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .page-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0;
+            font-family: 'Space Grotesk', sans-serif;
+        }
+
+        .page-title i {
+            color: var(--primary-500);
+            margin-right: 0.5rem;
+        }
+
+        .theme-controls {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .theme-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 2px solid var(--border-light);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .theme-btn:hover {
+            border-color: var(--primary-500);
+            color: var(--primary-500);
+            transform: scale(1.1);
+        }
+
+        .theme-btn.active {
+            background: var(--primary-500);
+            border-color: var(--primary-500);
+            color: white;
+        }
+
+        .color-palette {
+            display: flex;
+            gap: 0.5rem;
+            margin-left: 0.5rem;
+        }
+
+        .color-dot {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid var(--border-light);
+            transition: all 0.2s ease;
+        }
+
+        .color-dot:hover {
+            transform: scale(1.2);
+            border-color: var(--primary-500);
+        }
+
+        .color-dot.active {
+            border-color: var(--primary-500);
+            box-shadow: 0 0 0 2px var(--primary-200);
+        }
+
+        /* ========== CARDS ========== */
+        .card {
+            background: var(--bg-card);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-light);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow-md);
+            transition: all 0.3s ease;
+            margin-bottom: 1.5rem;
+        }
+
+        .card:hover {
+            box-shadow: var(--shadow-lg);
+            transform: translateY(-2px);
+        }
+
+        .card-header {
+            background: transparent;
+            border-bottom: 1px solid var(--border-light);
+            padding: 1.25rem 1.5rem;
+            font-weight: 600;
+        }
+
+        .card-header h5 {
+            margin: 0;
+            color: var(--primary-500);
+            font-size: 1.1rem;
+        }
+
+        .card-body {
+            padding: 1.5rem;
+        }
+
+        /* ========== STATS CARDS ========== */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-light);
+            border-radius: var(--border-radius);
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 100px;
+            height: 100px;
+            background: radial-gradient(circle, var(--primary-500) 0%, transparent 70%);
+            opacity: 0.1;
+            border-radius: 50%;
+            transform: translate(30px, -30px);
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+            border-color: var(--primary-500);
+        }
+
+        .stat-icon {
+            width: 48px;
+            height: 48px;
+            background: var(--bg-tertiary);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1rem;
+        }
+
+        .stat-icon i {
+            font-size: 24px;
+            color: var(--primary-500);
+        }
+
+        .stat-label {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            font-family: 'Space Grotesk', sans-serif;
+        }
+
+        /* ========== SCROLLABLE CONTAINERS ========== */
+        .scrollable-container {
+            max-height: 400px;
+            overflow-y: auto;
+            padding-right: 0.5rem;
+        }
+
+        .scrollable-container::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .scrollable-container::-webkit-scrollbar-track {
+            background: var(--bg-tertiary);
+            border-radius: 3px;
+        }
+
+        .scrollable-container::-webkit-scrollbar-thumb {
+            background: var(--primary-500);
+            border-radius: 3px;
+        }
+
+        .scrollable-container::-webkit-scrollbar-thumb:hover {
+            background: var(--primary-600);
+        }
+
+        /* Timeline for Recent Activity */
+        .timeline {
+            position: relative;
+            padding-left: 2rem;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(to bottom, var(--primary-500), transparent);
+        }
+
+        .timeline-item {
+            position: relative;
+            padding-bottom: 1.5rem;
+        }
+
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -2rem;
+            top: 0.25rem;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--primary-500);
+            border: 2px solid var(--bg-card);
+            box-shadow: 0 0 0 2px var(--primary-200);
+        }
+
+        .timeline-time {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 0.25rem;
+        }
+
+        .timeline-content {
+            background: var(--bg-tertiary);
+            border-radius: 12px;
+            padding: 1rem;
+            border: 1px solid var(--border-light);
+        }
+
+        /* ========== FORMS ========== */
+        .form-control, .form-select {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            color: var(--text-primary);
+            padding: 0.75rem 1rem;
+            transition: all 0.2s ease;
+        }
+
+        .form-control:focus, .form-select:focus {
+            border-color: var(--primary-500);
+            box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .form-label {
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        /* ========== BUTTONS ========== */
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 12px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            border: none;
+        }
+
+        .btn-primary {
+            background: var(--primary-500);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-600);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);
+        }
+
+        .btn-outline-primary {
+            background: transparent;
+            border: 2px solid var(--primary-500);
+            color: var(--primary-500);
+        }
+
+        .btn-outline-primary:hover {
+            background: var(--primary-500);
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+            transform: translateY(-2px);
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+            transform: translateY(-2px);
+        }
+
+        /* ========== BADGES ========== */
+        .badge {
+            padding: 0.35rem 0.75rem;
+            border-radius: 20px;
+            font-weight: 500;
+            font-size: 0.75rem;
+        }
+
+        .badge-room {
+            background: var(--primary-100);
+            color: var(--primary-700);
+        }
+
+        .badge-online {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+        }
+
+        .badge-mod {
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--info);
+        }
+
+        .badge-creator {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning);
+        }
+
+        /* ========== TEMPLATE CARDS ========== */
+        .template-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .template-card {
+            background: var(--bg-tertiary);
+            border: 2px solid transparent;
+            border-radius: var(--border-radius);
+            padding: 1.5rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            position: relative;
+        }
+
+        .template-card:hover {
+            border-color: var(--primary-500);
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .template-card.selected {
+            border-color: var(--primary-500);
+            background: var(--primary-100);
+        }
+
+        .template-card.selected::after {
+            content: '✓';
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 24px;
+            height: 24px;
+            background: var(--primary-500);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .template-icon {
+            width: 48px;
+            height: 48px;
+            background: var(--bg-primary);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1rem;
+        }
+
+        .template-icon i {
+            font-size: 24px;
+            color: var(--primary-500);
+        }
+
+        /* ========== FEATURE TOGGLES ========== */
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+        }
+
+        .feature-toggle {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            padding: 1rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            position: relative;
+        }
+
+        .feature-toggle:hover {
+            border-color: var(--primary-500);
+            transform: translateY(-2px);
+        }
+
+        .feature-toggle.selected {
+            background: var(--primary-100);
+            border-color: var(--primary-500);
+        }
+
+        .feature-icon {
+            width: 40px;
+            height: 40px;
+            background: var(--bg-primary);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .feature-icon i {
+            font-size: 20px;
+            color: var(--primary-500);
+        }
+
+        /* ========== LIST GROUP ========== */
+        .list-group {
+            border-radius: var(--border-radius);
+            overflow: hidden;
+        }
+
+        .list-group-item {
+            background: var(--bg-tertiary);
+            border-color: var(--border-light);
+            color: var(--text-primary);
+            padding: 1rem;
+        }
+
+        .list-group-item-action:hover {
+            background: var(--primary-100);
+            color: var(--primary-700);
+        }
+
+        /* ========== DROPDOWNS ========== */
+        .dropdown-menu {
+            background: var(--bg-card);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .dropdown-item {
+            color: var(--text-primary);
+            padding: 0.5rem 1rem;
+        }
+
+        .dropdown-item:hover {
+            background: var(--primary-100);
+            color: var(--primary-700);
+        }
+
+        /* ========== ALERTS ========== */
+        .alert {
+            border: none;
+            border-radius: var(--border-radius);
+            padding: 1rem 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .alert-success {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+            border-left: 4px solid var(--success);
+        }
+
+        .alert-danger {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            border-left: 4px solid var(--danger);
+        }
+
+        .alert-warning {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning);
+            border-left: 4px solid var(--warning);
+        }
+
+        .alert-info {
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--info);
+            border-left: 4px solid var(--info);
+        }
+
+        /* ========== EMPTY STATES ========== */
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+        }
+
+        .empty-icon {
+            font-size: 4rem;
+            color: var(--text-muted);
+            opacity: 0.3;
+            margin-bottom: 1rem;
+        }
+
+        .empty-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .empty-text {
+            color: var(--text-muted);
+        }
+
+        /* ========== RESPONSIVE ========== */
+        @media (max-width: 992px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+            
+            .sidebar.show {
+                transform: translateX(0);
+            }
+            
+            .main-content {
+                margin-left: 0;
+            }
+            
+            .menu-toggle {
+                display: block;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .template-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .feature-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .top-bar {
+                flex-direction: column;
+                gap: 1rem;
+                align-items: flex-start;
+            }
+            
+            .theme-controls {
+                width: 100%;
+                justify-content: flex-start;
+                flex-wrap: wrap;
+            }
+        }
+
+        /* Menu Toggle Button */
+        .menu-toggle {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: var(--primary-500);
+            color: white;
+            border: none;
+            box-shadow: var(--shadow-lg);
+            z-index: 1001;
+            cursor: pointer;
+        }
+
+        .menu-toggle:hover {
+            transform: scale(1.1);
+        }
+
+        /* Loading States */
+        .loading {
+            position: relative;
+            pointer-events: none;
+            opacity: 0.7;
+        }
+
+        .loading::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            margin: -10px 0 0 -10px;
+            border: 2px solid var(--border-light);
+            border-top-color: var(--primary-500);
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Animations */
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .animate-slide-in {
+            animation: slideIn 0.3s ease forwards;
+        }
+
+        /* Chart Containers */
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body data-theme="light" data-color="monero">
+    <!-- Mobile Menu Toggle -->
+    <button class="menu-toggle" onclick="toggleSidebar()">
+        <i class="fas fa-bars"></i>
+    </button>
+
+    <div class="app-wrapper">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h3>XMR Chat</h3>
+                <small>Room Management</small>
+            </div>
+            
+            <nav class="sidebar-nav">
+                {% if current_room %}
+                <!-- Management Navigation -->
+                <div class="nav-section">
+                    <div class="nav-section-title">Management</div>
+                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=overview" 
+                       class="nav-item {% if tab == 'overview' %}active{% endif %}">
+                        <i class="fas fa-chart-pie"></i>
+                        <span>Overview</span>
+                    </a>
+                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=users" 
+                       class="nav-item {% if tab == 'users' %}active{% endif %}">
+                        <i class="fas fa-users"></i>
+                        <span>Users</span>
+                        <span class="badge">{{ participants|length }}</span>
+                    </a>
+                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=banned" 
+                       class="nav-item {% if tab == 'banned' %}active{% endif %}">
+                        <i class="fas fa-ban"></i>
+                        <span>Banned</span>
+                        <span class="badge">{{ banned_users|length }}</span>
+                    </a>
+                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=settings" 
+                       class="nav-item {% if tab == 'settings' %}active{% endif %}">
+                        <i class="fas fa-cog"></i>
+                        <span>Settings</span>
+                    </a>
+                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=analytics" 
+                       class="nav-item {% if tab == 'analytics' %}active{% endif %}">
+                        <i class="fas fa-chart-line"></i>
+                        <span>Analytics</span>
+                    </a>
+                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=automation" 
+                       class="nav-item {% if tab == 'automation' %}active{% endif %}">
+                        <i class="fas fa-robot"></i>
+                        <span>Automation</span>
+                    </a>
+                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=danger" 
+                       class="nav-item {% if tab == 'danger' %}active{% endif %}">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span>Danger Zone</span>
+                    </a>
+                </div>
+                {% else %}
+                <!-- Creation Navigation -->
+                <div class="nav-section">
+                    <div class="nav-section-title">Create Room</div>
+                    <a href="{% url 'XMR:create_chat_room' %}" class="nav-item active">
+                        <i class="fas fa-plus-circle"></i>
+                        <span>New Room</span>
+                    </a>
+                </div>
+                {% endif %}
+
+                <!-- Quick Links -->
+                <div class="nav-section">
+                    <div class="nav-section-title">Quick Links</div>
+                    <a href="{% url 'XMR:chat_room' %}" class="nav-item">
+                        <i class="fas fa-comments"></i>
+                        <span>All Rooms</span>
+                    </a>
+                    <a href="{% url 'XMR:investments' %}" class="nav-item">
+                        <i class="fas fa-chart-line"></i>
+                        <span>Investments</span>
+                    </a>
+                    <a href="{% url 'XMR:account' %}" class="nav-item">
+                        <i class="fas fa-user"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Top Bar -->
+            <div class="top-bar">
+                <h1 class="page-title">
+                    <i class="fas {% if current_room %}fa-cog{% else %}fa-plus-circle{% endif %}"></i>
+                    {% if current_room %}
+                        {{ current_room.name }}
+                    {% else %}
+                        Create New Room
+                    {% endif %}
+                </h1>
+
+                <div class="theme-controls">
+                    <!-- Dark/Light Toggle -->
+                    <button class="theme-btn" onclick="toggleTheme()" id="themeToggle" title="Toggle Dark/Light">
+                        <i class="fas fa-moon"></i>
+                    </button>
+
+                    <!-- Color Palette -->
+                    <div class="color-palette">
+                        <div class="color-dot" style="background: #f26822;" onclick="setColor('monero')" title="Monero Orange"></div>
+                        <div class="color-dot" style="background: #06b6d4;" onclick="setColor('ocean')" title="Ocean Blue"></div>
+                        <div class="color-dot" style="background: #22c55e;" onclick="setColor('forest')" title="Forest Green"></div>
+                        <div class="color-dot" style="background: #a855f7;" onclick="setColor('royal')" title="Royal Purple"></div>
+                        <div class="color-dot" style="background: #737373;" onclick="setColor('monochrome')" title="Monochrome"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Messages -->
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        <i class="fas fa-{% if message.tags == 'success' %}check-circle{% elif message.tags == 'error' %}exclamation-circle{% else %}info-circle{% endif %} me-2"></i>
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            <!-- CREATION MODE -->
+            {% if not current_room %}
+                <!-- Stats Grid -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon"><i class="fas fa-door-open"></i></div>
+                        <div class="stat-label">Your Rooms</div>
+                        <div class="stat-value">{{ admin_rooms|length }}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon"><i class="fas fa-users"></i></div>
+                        <div class="stat-label">Total Participants</div>
+                        <div class="stat-value">{{ stats.total_participants|default:"0" }}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon"><i class="fas fa-comment"></i></div>
+                        <div class="stat-label">Messages Today</div>
+                        <div class="stat-value">{{ stats.messages_today|default:"0" }}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon"><i class="fas fa-circle"></i></div>
+                        <div class="stat-label">Online Now</div>
+                        <div class="stat-value">{{ stats.users_online|default:"0" }}</div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-lg-8">
+                        <!-- Creation Form -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="mb-0"><i class="fas fa-magic me-2"></i>Room Configuration</h5>
+                            </div>
+                            <div class="card-body">
+                                <form method="POST" action="{% url 'XMR:create_chat_room' %}" id="roomCreationForm">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="form_action" value="create_room">
+
+                                    <!-- Basic Info -->
+                                    <div class="mb-4">
+                                        <h6 class="text-primary mb-3">Basic Information</h6>
+                                        <div class="row g-3">
+                                            <div class="col-md-6">
+                                                <label class="form-label">Room Name <span class="text-danger">*</span></label>
+                                                <input type="text" class="form-control" name="name" id="roomName" 
+                                                       required placeholder="e.g., Monero Traders" maxlength="50" oninput="updateCounter(this, 'roomNameCounter')">
+                                                <small class="text-muted"><span id="roomNameCounter">0</span>/50</small>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label">Room Type</label>
+                                                <select class="form-select" name="room_type">
+                                                    {% for type in room_types %}
+                                                        <option value="{{ type.0 }}">{{ type.1 }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                            </div>
+                                            <div class="col-12">
+                                                <label class="form-label">Description</label>
+                                                <textarea class="form-control" name="description" id="roomDescription" rows="3" 
+                                                          placeholder="What's this room about?" oninput="updateCounter(this, 'descCounter')"></textarea>
+                                                <small class="text-muted"><span id="descCounter">0</span>/500</small>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Templates -->
+                                    <div class="mb-4">
+                                        <h6 class="text-primary mb-3">Quick Templates</h6>
+                                        <div class="template-grid">
+                                            {% for template in room_templates %}
+                                                <div class="template-card" onclick="selectTemplate(this, '{{ template.id }}')">
+                                                    <div class="template-icon"><i class="fas {{ template.icon }}"></i></div>
+                                                    <h6>{{ template.name }}</h6>
+                                                    <small class="text-muted">{{ template.description }}</small>
+                                                    <input type="radio" name="template" value="{{ template.id }}" style="display: none;">
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+
+                                    <!-- Advanced Settings -->
+                                    <div class="mb-4">
+                                        <h6 class="text-primary mb-3">
+                                            Advanced Settings
+                                            <button class="btn btn-sm btn-outline-primary ms-2" type="button" 
+                                                    onclick="toggleAdvanced(this)">
+                                                <i class="fas fa-chevron-down"></i>
+                                            </button>
+                                        </h6>
+                                        <div id="advancedSettings" style="display: none;">
+                                            <div class="border p-3 rounded">
+                                                <div class="row g-3">
+                                                    <div class="col-md-6">
+                                                        <label class="form-label">Max Participants</label>
+                                                        <select class="form-select" name="max_participants">
+                                                            {% for num in max_options %}
+                                                                <option value="{{ num }}" {% if num == 100 %}selected{% endif %}>{{ num }}</option>
+                                                            {% endfor %}
+                                                        </select>
+                                                    </div>
+                                                    <div class="col-md-6">
+                                                        <div class="form-check form-switch mt-4">
+                                                            <input class="form-check-input" type="checkbox" name="is_protected" id="isProtected">
+                                                            <label class="form-check-label" for="isProtected">Password Protected</label>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-12" id="passwordField" style="display: none;">
+                                                        <label class="form-label">Password</label>
+                                                        <div class="input-group">
+                                                            <input type="text" class="form-control" name="password" id="roomPassword">
+                                                            <button class="btn btn-outline-primary" type="button" onclick="generatePassword()">
+                                                                <i class="fas fa-random"></i>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Features -->
+                                    <div class="mb-4">
+                                        <h6 class="text-primary mb-3">Room Features</h6>
+                                        <div class="feature-grid">
+                                            {% for feature in features %}
+                                                <div class="feature-toggle" onclick="toggleFeature(this, '{{ feature.id }}')">
+                                                    <div class="feature-icon"><i class="fas {{ feature.icon }}"></i></div>
+                                                    <div>
+                                                        <div>{{ feature.name }}</div>
+                                                        <small class="text-muted">Click to enable</small>
+                                                    </div>
+                                                    <input type="checkbox" name="features" value="{{ feature.id }}" 
+                                                           id="feature_{{ feature.id }}" style="display: none;">
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+
+                                    <button type="submit" class="btn btn-primary w-100">
+                                        <i class="fas fa-check-circle me-2"></i>Create Room
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-lg-4">
+                        <!-- Your Rooms -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="mb-0"><i class="fas fa-door-open me-2"></i>Your Rooms</h5>
+                            </div>
+                            <div class="card-body p-0">
+                                {% if admin_rooms %}
+                                    <div class="list-group list-group-flush">
+                                        {% for room in admin_rooms %}
+                                            <a href="{% url 'XMR:create_chat_room' %}?room={{ room.slug }}" 
+                                               class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                                                <div>
+                                                    <i class="fas fa-door-open me-2" style="color: var(--primary-500);"></i>
+                                                    <strong>{{ room.name }}</strong>
+                                                    <br>
+                                                    <small class="text-muted">
+                                                        <i class="fas fa-users me-1"></i>{{ room.participant_count }}
+                                                        <i class="fas fa-comment ms-2 me-1"></i>{{ room.message_count }}
+                                                    </small>
+                                                </div>
+                                                <span class="badge badge-room">{{ room.room_type }}</span>
+                                            </a>
+                                        {% endfor %}
+                                    </div>
+                                {% else %}
+                                    <div class="empty-state">
+                                        <div class="empty-icon"><i class="fas fa-door-open"></i></div>
+                                        <div class="empty-title">No Rooms Yet</div>
+                                        <div class="empty-text">Create your first room</div>
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            <!-- MANAGEMENT MODE -->
+            {% else %}
+                <!-- Room Header -->
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center">
+                            <div class="flex-shrink-0">
+                                <div class="stat-icon" style="width: 64px; height: 64px;">
+                                    <i class="fas {{ current_room.icon|default:'fa-comments' }} fa-2x"></i>
+                                </div>
+                            </div>
+                            <div class="flex-grow-1 ms-3">
+                                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                                    <h2 class="h3 mb-0">{{ current_room.name }}</h2>
+                                    <span class="badge badge-room">{{ current_room.room_type }}</span>
+                                    {% if current_room.is_protected %}
+                                        <span class="badge bg-warning"><i class="fas fa-lock me-1"></i>Protected</span>
+                                    {% endif %}
+                                </div>
+                                <p class="text-muted mb-2">{{ current_room.description|default:"No description" }}</p>
+                                <div class="d-flex gap-3 flex-wrap">
+                                    <span class="badge badge-online"><i class="fas fa-circle me-1"></i>{{ current_room.online_count|default:"0" }} online</span>
+                                    <span class="badge"><i class="fas fa-users me-1"></i>{{ current_room.participants.count }} total</span>
+                                    <span class="badge"><i class="fas fa-calendar me-1"></i>{{ current_room.created_at|timesince }} ago</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab Content -->
+                <div class="card">
+                    <div class="card-body">
+                        <!-- OVERVIEW TAB -->
+                        {% if tab == 'overview' %}
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h5 class="mb-3">Quick Stats</h5>
+                                <div class="row g-3">
+                                    <div class="col-6">
+                                        <div class="stat-card">
+                                            <div class="stat-label">Total Messages</div>
+                                            <div class="stat-value">{{ analytics.total_messages|default:"0" }}</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="stat-card">
+                                            <div class="stat-label">Messages Today</div>
+                                            <div class="stat-value">{{ analytics.messages_today|default:"0" }}</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="stat-card">
+                                            <div class="stat-label">Active Users (7d)</div>
+                                            <div class="stat-value">{{ analytics.active_users_7d|default:"0" }}</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="stat-card">
+                                            <div class="stat-label">Files Shared</div>
+                                            <div class="stat-value">{{ room_stats.files_shared|default:"0" }}</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <h5 class="mb-3 mt-4">Top Posters</h5>
+                                <div class="scrollable-container">
+                                    {% for poster in analytics.top_posters %}
+                                        <div class="d-flex justify-content-between align-items-center mb-2 p-2 border-bottom">
+                                            <span><i class="fas fa-user-circle me-2"></i>{{ poster.username }}</span>
+                                            <span class="badge badge-room">{{ poster.msg_count }} msgs</span>
+                                        </div>
+                                    {% empty %}
+                                        <div class="text-muted text-center py-3">No messages yet</div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <h5 class="mb-3">Recent Activity</h5>
+                                <div class="scrollable-container">
+                                    <div class="timeline">
+                                        {% for activity in recent_activity %}
+                                            <div class="timeline-item">
+                                                <div class="timeline-time">{{ activity.created_at|timesince }} ago</div>
+                                                <div class="timeline-content">
+                                                    <strong>{{ activity.user.username }}</strong> {{ activity.action|lower }}
+                                                    {% if activity.target_user %} → <strong>{{ activity.target_user.username }}</strong>{% endif %}
+                                                </div>
+                                            </div>
+                                        {% empty %}
+                                            <div class="text-muted text-center py-3">No recent activity</div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- USERS TAB -->
+                        {% elif tab == 'users' %}
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h5 class="mb-3">Add Users</h5>
+                                <form method="POST">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="form_action" value="bulk_add_participants">
+                                    
+                                    <div class="mb-3">
+                                        <label class="form-label">Search</label>
+                                        <input type="text" class="form-control" id="userSearch" placeholder="Username..." onkeyup="filterUsers()">
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Role</label>
+                                        <select class="form-select" name="role">
+                                            <option value="participant">Participant</option>
+                                            <option value="moderator">Moderator</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label d-flex justify-content-between">
+                                            <span>Available Users</span>
+                                            <button type="button" class="btn btn-link btn-sm p-0" onclick="selectAllUsers()">Select All</button>
+                                        </label>
+                                        <div class="scrollable-container border rounded p-2">
+                                            {% for user in available_users %}
+                                                <div class="form-check mb-2 user-item" data-username="{{ user.username|lower }}">
+                                                    <input class="form-check-input" type="checkbox" name="users" value="{{ user.id }}" id="user_{{ user.id }}">
+                                                    <label class="form-check-label" for="user_{{ user.id }}">
+                                                        <strong>{{ user.username }}</strong><br>
+                                                        <small class="text-muted">{{ user.email }}</small>
+                                                    </label>
+                                                </div>
+                                            {% empty %}
+                                                <p class="text-muted text-center py-3">No users available</p>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+
+                                    <button type="submit" class="btn btn-primary">Add Selected</button>
+                                </form>
+                            </div>
+
+                            <div class="col-md-6">
+                                <h5 class="mb-3">Current Participants ({{ participants|length }})</h5>
+                                <form method="POST">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="form_action" value="bulk_remove_participants">
+                                    
+                                    <div class="scrollable-container border rounded p-2" style="max-height: 400px;">
+                                        {% for participant in participants %}
+                                            <div class="d-flex justify-content-between align-items-center mb-2 p-2 border-bottom">
+                                                <div>
+                                                    <input class="form-check-input me-2" type="checkbox" name="users" value="{{ participant.id }}" id="part_{{ participant.id }}">
+                                                    <label for="part_{{ participant.id }}">
+                                                        <strong>{{ participant.username }}</strong>
+                                                        {% if participant in moderators %}<span class="badge badge-mod ms-2">MOD</span>{% endif %}
+                                                        {% if participant == current_room.created_by %}<span class="badge badge-creator ms-2">CREATOR</span>{% endif %}
+                                                        {% if participant.is_online %}<span class="badge badge-online ms-2">ONLINE</span>{% endif %}
+                                                    </label>
+                                                </div>
+                                                <div class="dropdown">
+                                                    <button class="btn btn-sm btn-outline-primary" data-bs-toggle="dropdown">
+                                                        <i class="fas fa-ellipsis-v"></i>
+                                                    </button>
+                                                    <ul class="dropdown-menu">
+                                                        {% if participant not in moderators %}
+                                                            <li><a class="dropdown-item" href="#" onclick="makeModerator({{ participant.id }})">
+                                                                <i class="fas fa-crown me-2"></i>Make Moderator</a>
+                                                            </li>
+                                                        {% else %}
+                                                            <li><a class="dropdown-item" href="#" onclick="removeModerator({{ participant.id }})">
+                                                                <i class="fas fa-crown me-2 text-warning"></i>Remove Moderator</a>
+                                                            </li>
+                                                        {% endif %}
+                                                        {% if participant != current_room.created_by %}
+                                                            <li><a class="dropdown-item text-danger" href="#" onclick="banUser({{ participant.id }})">
+                                                                <i class="fas fa-ban me-2"></i>Ban User</a>
+                                                            </li>
+                                                        {% endif %}
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                        {% empty %}
+                                            <p class="text-muted text-center py-3">No participants</p>
+                                        {% endfor %}
+                                    </div>
+
+                                    <button type="submit" class="btn btn-danger mt-3">Remove Selected</button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <!-- BANNED TAB -->
+                        {% elif tab == 'banned' %}
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h5 class="mb-3">Ban Users</h5>
+                                <form method="POST">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="form_action" value="bulk_ban_users">
+                                    <div class="mb-3">
+                                        <label class="form-label">Reason</label>
+                                        <input type="text" class="form-control" name="reason" placeholder="Violation reason" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Select Users</label>
+                                        <div class="scrollable-container border rounded p-2">
+                                            {% for participant in participants %}
+                                                {% if participant != current_room.created_by %}
+                                                    <div class="form-check mb-2">
+                                                        <input class="form-check-input" type="checkbox" name="users" value="{{ participant.id }}" id="ban_{{ participant.id }}">
+                                                        <label class="form-check-label" for="ban_{{ participant.id }}">{{ participant.username }}</label>
+                                                    </div>
+                                                {% endif %}
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="btn btn-danger">Ban Selected</button>
+                                </form>
+                            </div>
+
+                            <div class="col-md-6">
+                                <h5 class="mb-3">Banned Users ({{ banned_users|length }})</h5>
+                                <div class="scrollable-container border rounded p-2">
+                                    {% for banned in banned_users %}
+                                        <div class="d-flex justify-content-between align-items-center mb-2 p-2 border-bottom">
+                                            <div>
+                                                <strong>{{ banned.username }}</strong>
+                                                <br><small class="text-danger">Reason: {{ banned.ban_reason|default:"Not specified" }}</small>
+                                            </div>
+                                            <button class="btn btn-sm btn-success" onclick="unbanUser({{ banned.id }})">
+                                                <i class="fas fa-undo"></i>
+                                            </button>
+                                        </div>
+                                    {% empty %}
+                                        <p class="text-muted text-center py-3">No banned users</p>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SETTINGS TAB -->
+                        {% elif tab == 'settings' %}
+                        <form method="POST" enctype="multipart/form-data">
+                            {% csrf_token %}
+                            <input type="hidden" name="form_action" value="update_settings">
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h5 class="mb-3">General</h5>
+                                    <div class="mb-3">
+                                        <label class="form-label">Room Name</label>
+                                        <input type="text" class="form-control" name="name" value="{{ current_room.name }}">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Description</label>
+                                        <textarea class="form-control" name="description" rows="3">{{ current_room.description }}</textarea>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Room Type</label>
+                                        <select class="form-select" name="room_type">
+                                            {% for type in room_types %}
+                                                <option value="{{ type.0 }}" {% if current_room.room_type == type.0 %}selected{% endif %}>{{ type.1 }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Max Participants</label>
+                                        <select class="form-select" name="max_participants">
+                                            {% for num in max_options %}
+                                                <option value="{{ num }}" {% if current_room.max_participants == num %}selected{% endif %}>{{ num }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-6">
+                                    <h5 class="mb-3">Security</h5>
+                                    <div class="mb-3">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" name="is_protected" id="settingsProtected" 
+                                                   {% if current_room.is_protected %}checked{% endif %}>
+                                            <label class="form-check-label" for="settingsProtected">Password Protected</label>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3" id="settingsPasswordField" style="{% if not current_room.is_protected %}display: none;{% endif %}">
+                                        <label class="form-label">Password</label>
+                                        <div class="input-group">
+                                            <input type="text" class="form-control" name="password" value="{{ current_room.password|default:'' }}">
+                                            <button class="btn btn-outline-primary" type="button" onclick="generatePassword()">
+                                                <i class="fas fa-random"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Slow Mode (seconds)</label>
+                                        <input type="number" class="form-control" name="slow_mode_delay" 
+                                               value="{{ current_room.slow_mode_delay|default:'0' }}" min="0" max="60">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Message Retention (days)</label>
+                                        <input type="number" class="form-control" name="message_retention_days" 
+                                               value="{{ current_room.message_retention_days|default:'0' }}" min="0">
+                                    </div>
+                                </div>
+
+                                <div class="col-12 mt-3">
+                                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                                </div>
+                            </div>
+                        </form>
+
+                        <!-- ANALYTICS TAB - FIXED STATIC CHARTS -->
+                        {% elif tab == 'analytics' %}
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h5 class="mb-3">Activity (Last 7 Days)</h5>
+                                <div class="card">
+                                    <div class="card-body">
+                                        <canvas id="activityChart" style="width: 100%; height: 300px;"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <h5 class="mb-3">Message Distribution</h5>
+                                <div class="card">
+                                    <div class="card-body">
+                                        <canvas id="messageTypeChart" style="width: 100%; height: 300px;"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- AUTOMATION TAB -->
+                        {% elif tab == 'automation' %}
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h5 class="mb-3">Auto-Responses</h5>
+                                <form method="POST">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="form_action" value="set_auto_responses">
+                                    <div class="mb-3">
+                                        <label class="form-label">Trigger Word</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text">!</span>
+                                            <input type="text" class="form-control" name="trigger" placeholder="hello" required>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Response</label>
+                                        <textarea class="form-control" name="response" rows="2" placeholder="Bot's response..." required></textarea>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">Add Rule</button>
+                                </form>
+
+                                <h5 class="mb-3 mt-4">Current Rules</h5>
+                                <div class="scrollable-container border rounded p-2">
+                                    {% for rule in auto_responses %}
+                                        <div class="d-flex justify-content-between align-items-center mb-2 p-2 border-bottom">
+                                            <div>
+                                                <span class="badge badge-room">!{{ rule.trigger }}</span>
+                                                <span class="ms-2">{{ rule.response|truncatechars:50 }}</span>
+                                            </div>
+                                            <button class="btn btn-sm btn-danger" onclick="deleteRule({{ rule.id }})">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    {% empty %}
+                                        <p class="text-muted text-center py-3">No rules configured</p>
+                                    {% endfor %}
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <h5 class="mb-3">Scheduled Events</h5>
+                                <form method="POST">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="form_action" value="schedule_event">
+                                    <div class="mb-3">
+                                        <label class="form-label">Event Name</label>
+                                        <input type="text" class="form-control" name="event_name" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Description</label>
+                                        <textarea class="form-control" name="event_description" rows="2"></textarea>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Date & Time</label>
+                                        <input type="datetime-local" class="form-control" name="scheduled_time" required>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">Schedule Event</button>
+                                </form>
+
+                                <h5 class="mb-3 mt-4">Upcoming Events</h5>
+                                <div class="scrollable-container border rounded p-2">
+                                    {% for event in scheduled_events %}
+                                        <div class="mb-2 p-2 border-bottom">
+                                            <div class="d-flex justify-content-between">
+                                                <strong>{{ event.name }}</strong>
+                                                <small class="text-muted">{{ event.scheduled_time|date:"M d, H:i" }}</small>
+                                            </div>
+                                            <small class="text-muted">{{ event.description }}</small>
+                                        </div>
+                                    {% empty %}
+                                        <p class="text-muted text-center py-3">No scheduled events</p>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- DANGER TAB -->
+                        {% elif tab == 'danger' %}
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            Actions here are irreversible. Please proceed with caution.
+                        </div>
+
+                        <div class="card border-danger">
+                            <div class="card-header bg-danger text-white">
+                                <h5 class="mb-0"><i class="fas fa-skull-crossbones me-2"></i>Danger Zone</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-4">
+                                    <h6 class="text-danger">Transfer Ownership</h6>
+                                    <p class="text-muted">Transfer this room to another user. This cannot be undone.</p>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <select class="form-select mb-2" id="newOwner">
+                                                <option value="">Select new owner...</option>
+                                                {% for participant in participants %}
+                                                    {% if participant != current_room.created_by %}
+                                                        <option value="{{ participant.id }}">{{ participant.username }}</option>
+                                                    {% endif %}
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <button class="btn btn-warning" onclick="transferOwnership()">
+                                                <i class="fas fa-exchange-alt me-2"></i>Transfer
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-4">
+                                    <h6 class="text-danger">Archive Room</h6>
+                                    <p class="text-muted">Archive this room and make it read-only.</p>
+                                    <button class="btn btn-warning" onclick="archiveRoom()">
+                                        <i class="fas fa-archive me-2"></i>Archive Room
+                                    </button>
+                                </div>
+
+                                <div>
+                                    <h6 class="text-danger">Delete Room</h6>
+                                    <p class="text-muted">Permanently delete this room and all messages.</p>
+                                    <form method="POST" onsubmit="return confirmDelete()">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="form_action" value="delete_room">
+                                        <div class="mb-3">
+                                            <label class="form-label">Type <strong class="text-danger">{{ current_room.name }}</strong> to confirm:</label>
+                                            <input type="text" class="form-control" name="confirm_name" required>
+                                        </div>
+                                        <button type="submit" class="btn btn-danger">
+                                            <i class="fas fa-trash-alt me-2"></i>Delete Permanently
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endif %}
+        </main>
+    </div>
+
+    <script>
+        // ========== THEME MANAGEMENT ==========
+        function toggleTheme() {
+            const body = document.body;
+            const currentTheme = body.getAttribute('data-theme');
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            body.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            
+            // Update icon
+            const icon = document.querySelector('#themeToggle i');
+            icon.className = newTheme === 'light' ? 'fas fa-moon' : 'fas fa-sun';
+            
+            // Update chart colors if charts exist
+            updateChartColors();
+        }
+
+        function setColor(color) {
+            document.body.setAttribute('data-color', color);
+            localStorage.setItem('color', color);
+            
+            // Update active dot
+            document.querySelectorAll('.color-dot').forEach(dot => dot.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            
+            // Update chart colors
+            updateChartColors();
+        }
+
+        // Load saved preferences
+        document.addEventListener('DOMContentLoaded', function() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            const savedColor = localStorage.getItem('color') || 'monero';
+            
+            document.body.setAttribute('data-theme', savedTheme);
+            document.body.setAttribute('data-color', savedColor);
+            
+            // Update theme icon
+            const icon = document.querySelector('#themeToggle i');
+            if (icon) icon.className = savedTheme === 'light' ? 'fas fa-moon' : 'fas fa-sun';
+            
+            // Update active color dot
+            const colorMap = {
+                'monero': '#f26822',
+                'ocean': '#06b6d4',
+                'forest': '#22c55e',
+                'royal': '#a855f7',
+                'monochrome': '#737373'
+            };
+            
+            document.querySelectorAll('.color-dot').forEach(dot => {
+                if (dot.style.background.includes(colorMap[savedColor])) {
+                    dot.classList.add('active');
+                }
+            });
+
+            // Initialize charts if on analytics tab
+            {% if tab == 'analytics' %}
+            setTimeout(initCharts, 100);
+            {% endif %}
+        });
+
+        // ========== SIDEBAR ==========
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('show');
+        }
+
+        // Close sidebar when clicking outside on mobile
+        document.addEventListener('click', function(event) {
+            const sidebar = document.getElementById('sidebar');
+            const toggle = document.querySelector('.menu-toggle');
+            
+            if (window.innerWidth <= 992 && 
+                !sidebar.contains(event.target) && 
+                !toggle.contains(event.target) &&
+                sidebar.classList.contains('show')) {
+                sidebar.classList.remove('show');
+            }
+        });
+
+        // ========== FORM HELPERS ==========
+        function updateCounter(input, counterId) {
+            document.getElementById(counterId).textContent = input.value.length;
+        }
+
+        function toggleAdvanced(btn) {
+            const el = document.getElementById('advancedSettings');
+            const icon = btn.querySelector('i');
+            
+            if (el.style.display === 'none') {
+                el.style.display = 'block';
+                icon.className = 'fas fa-chevron-up';
+            } else {
+                el.style.display = 'none';
+                icon.className = 'fas fa-chevron-down';
+            }
+        }
+
+        function selectTemplate(card, templateId) {
+            document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
+            card.classList.add('selected');
+            card.querySelector('input[type="radio"]').checked = true;
+        }
+
+        function toggleFeature(element, featureId) {
+            element.classList.toggle('selected');
+            const checkbox = document.getElementById(`feature_${featureId}`);
+            checkbox.checked = !checkbox.checked;
+        }
+
+        function generatePassword() {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+            let password = '';
+            for (let i = 0; i < 16; i++) {
+                password += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            document.getElementById('roomPassword').value = password;
+            
+            // Copy to clipboard
+            navigator.clipboard.writeText(password).then(() => {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Password Generated',
+                    text: 'Password copied to clipboard',
+                    timer: 1500,
+                    showConfirmButton: false,
+                    background: 'var(--bg-card)',
+                    color: 'var(--text-primary)'
+                });
+            });
+        }
+
+        // Password field visibility
+        document.getElementById('isProtected')?.addEventListener('change', function() {
+            document.getElementById('passwordField').style.display = this.checked ? 'block' : 'none';
+            if (this.checked && !document.getElementById('roomPassword').value) {
+                generatePassword();
+            }
+        });
+
+        document.getElementById('settingsProtected')?.addEventListener('change', function() {
+            document.getElementById('settingsPasswordField').style.display = this.checked ? 'block' : 'none';
+        });
+
+        // User filtering
+        function filterUsers() {
+            const search = document.getElementById('userSearch').value.toLowerCase();
+            document.querySelectorAll('.user-item').forEach(item => {
+                const username = item.getAttribute('data-username');
+                item.style.display = username.includes(search) ? 'flex' : 'none';
+            });
+        }
+
+        function selectAllUsers() {
+            document.querySelectorAll('input[name="users"]').forEach(cb => cb.checked = true);
+        }
+
+        // ========== API CALLS ==========
+        function makeModerator(userId) {
+            Swal.fire({
+                title: 'Make Moderator?',
+                text: 'This user will have moderation privileges',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: 'var(--primary-500)',
+                cancelButtonColor: 'var(--text-muted)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    fetch(`/api/chat/room/{{ current_room.slug }}/moderator/add/`, {
+                        method: 'POST',
+                        headers: { 
+                            'X-CSRFToken': '{{ csrf_token }}', 
+                            'Content-Type': 'application/json' 
+                        },
+                        body: JSON.stringify({user_id: userId})
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Success',
+                                text: 'Moderator added',
+                                timer: 1500,
+                                showConfirmButton: false,
+                                background: 'var(--bg-card)',
+                                color: 'var(--text-primary)'
+                            }).then(() => location.reload());
+                        }
+                    });
+                }
+            });
+        }
+
+        function removeModerator(userId) {
+            Swal.fire({
+                title: 'Remove Moderator?',
+                text: 'This user will lose moderation privileges',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: 'var(--danger)',
+                cancelButtonColor: 'var(--text-muted)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    fetch(`/api/chat/room/{{ current_room.slug }}/moderator/remove/`, {
+                        method: 'POST',
+                        headers: { 
+                            'X-CSRFToken': '{{ csrf_token }}', 
+                            'Content-Type': 'application/json' 
+                        },
+                        body: JSON.stringify({user_id: userId})
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Success',
+                                text: 'Moderator removed',
+                                timer: 1500,
+                                showConfirmButton: false,
+                                background: 'var(--bg-card)',
+                                color: 'var(--text-primary)'
+                            }).then(() => location.reload());
+                        }
+                    });
+                }
+            });
+        }
+
+        function banUser(userId) {
+            Swal.fire({
+                title: 'Ban User',
+                input: 'text',
+                inputLabel: 'Ban Reason',
+                inputPlaceholder: 'Enter reason for ban...',
+                showCancelButton: true,
+                confirmButtonColor: 'var(--danger)',
+                cancelButtonColor: 'var(--text-muted)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+                inputValidator: (value) => {
+                    if (!value) {
+                        return 'Reason is required!';
+                    }
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    fetch(`/api/chat/room/{{ current_room.slug }}/ban/`, {
+                        method: 'POST',
+                        headers: { 
+                            'X-CSRFToken': '{{ csrf_token }}', 
+                            'Content-Type': 'application/json' 
+                        },
+                        body: JSON.stringify({user_id: userId, reason: result.value})
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'User Banned',
+                                text: 'User has been banned from the room',
+                                timer: 1500,
+                                showConfirmButton: false,
+                                background: 'var(--bg-card)',
+                                color: 'var(--text-primary)'
+                            }).then(() => location.reload());
+                        }
+                    });
+                }
+            });
+        }
+
+        function unbanUser(userId) {
+            Swal.fire({
+                title: 'Unban User?',
+                text: 'This user will be able to join the room again',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: 'var(--success)',
+                cancelButtonColor: 'var(--text-muted)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    fetch(`/api/chat/room/{{ current_room.slug }}/unban/`, {
+                        method: 'POST',
+                        headers: { 
+                            'X-CSRFToken': '{{ csrf_token }}', 
+                            'Content-Type': 'application/json' 
+                        },
+                        body: JSON.stringify({user_id: userId})
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'User Unbanned',
+                                text: 'User has been unbanned',
+                                timer: 1500,
+                                showConfirmButton: false,
+                                background: 'var(--bg-card)',
+                                color: 'var(--text-primary)'
+                            }).then(() => location.reload());
+                        }
+                    });
+                }
+            });
+        }
+
+        function transferOwnership() {
+            const newOwner = document.getElementById('newOwner').value;
+            if (!newOwner) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'Please select a new owner',
+                    background: 'var(--bg-card)',
+                    color: 'var(--text-primary)'
+                });
+                return;
+            }
+            
+            Swal.fire({
+                title: 'Transfer Ownership?',
+                text: 'This action cannot be undone!',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: 'var(--warning)',
+                cancelButtonColor: 'var(--text-muted)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    fetch(`/api/chat/room/{{ current_room.slug }}/transfer/`, {
+                        method: 'POST',
+                        headers: { 
+                            'X-CSRFToken': '{{ csrf_token }}', 
+                            'Content-Type': 'application/json' 
+                        },
+                        body: JSON.stringify({new_owner_id: newOwner})
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Ownership Transferred',
+                                text: 'Room ownership has been transferred',
+                                timer: 1500,
+                                showConfirmButton: false,
+                                background: 'var(--bg-card)',
+                                color: 'var(--text-primary)'
+                            }).then(() => location.reload());
+                        }
+                    });
+                }
+            });
+        }
+
+        function archiveRoom() {
+            Swal.fire({
+                title: 'Archive Room?',
+                text: 'The room will become read-only',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: 'var(--warning)',
+                cancelButtonColor: 'var(--text-muted)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    fetch(`/api/chat/room/{{ current_room.slug }}/archive/`, {
+                        method: 'POST',
+                        headers: { 
+                            'X-CSRFToken': '{{ csrf_token }}' 
+                        }
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Room Archived',
+                                text: 'The room has been archived',
+                                timer: 1500,
+                                showConfirmButton: false,
+                                background: 'var(--bg-card)',
+                                color: 'var(--text-primary)'
+                            }).then(() => {
+                                window.location.href = "{% url 'XMR:chat_room' %}";
+                            });
+                        }
+                    });
+                }
+            });
+        }
+
+        function deleteRule(ruleId) {
+            Swal.fire({
+                title: 'Delete Rule?',
+                text: 'This auto-response rule will be removed',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: 'var(--danger)',
+                cancelButtonColor: 'var(--text-muted)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    fetch(`/api/chat/auto-response/${ruleId}/delete/`, {
+                        method: 'POST',
+                        headers: { 
+                            'X-CSRFToken': '{{ csrf_token }}' 
+                        }
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            location.reload();
+                        }
+                    });
+                }
+            });
+        }
+
+        function confirmDelete() {
+            return Swal.fire({
+                title: 'Delete Room?',
+                text: 'This action cannot be undone! All messages will be lost.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: 'var(--danger)',
+                cancelButtonColor: 'var(--text-muted)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)'
+            }).then((result) => {
+                return result.isConfirmed;
+            });
+        }
+
+        // ========== CHARTS - FIXED STATIC VERSION ==========
+        let activityChart = null;
+        let messageChart = null;
+
+        function initCharts() {
+            // Destroy existing charts if they exist
+            if (activityChart) {
+                activityChart.destroy();
+            }
+            if (messageChart) {
+                messageChart.destroy();
+            }
+
+            // Activity Chart
+            const ctx1 = document.getElementById('activityChart')?.getContext('2d');
+            if (ctx1) {
+                const primaryColor = getComputedStyle(document.body).getPropertyValue('--primary-500').trim();
+                const textSecondary = getComputedStyle(document.body).getPropertyValue('--text-secondary').trim();
+                const borderLight = getComputedStyle(document.body).getPropertyValue('--border-light').trim();
+                
+                activityChart = new Chart(ctx1, {
+                    type: 'line',
+                    data: {
+                        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                        datasets: [{
+                            label: 'Messages',
+                            data: [65, 59, 80, 81, 56, 55, 40],
+                            borderColor: primaryColor,
+                            backgroundColor: function(context) {
+                                const ctx = context.chart.ctx;
+                                const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+                                gradient.addColorStop(0, primaryColor + '40');
+                                gradient.addColorStop(1, 'transparent');
+                                return gradient;
+                            },
+                            borderWidth: 2,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                            pointBackgroundColor: primaryColor,
+                            pointBorderColor: 'white',
+                            pointBorderWidth: 2,
+                            tension: 0.3,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: {
+                            duration: 0  // Disable animations completely
+                        },
+                        hover: {
+                            animationDuration: 0  // Disable hover animations
+                        },
+                        responsiveAnimationDuration: 0,  // Disable resize animations
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                enabled: true,
+                                mode: 'index',
+                                intersect: false,
+                                backgroundColor: 'var(--bg-card)',
+                                titleColor: 'var(--text-primary)',
+                                bodyColor: 'var(--text-secondary)',
+                                borderColor: 'var(--border-light)',
+                                borderWidth: 1
+                            }
+                        },
+                        scales: {
+                            y: { 
+                                beginAtZero: true,
+                                grid: { 
+                                    color: borderLight,
+                                    drawBorder: false
+                                },
+                                ticks: { 
+                                    color: textSecondary,
+                                    stepSize: 20
+                                }
+                            },
+                            x: { 
+                                grid: { 
+                                    display: false
+                                },
+                                ticks: { 
+                                    color: textSecondary
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Message Type Chart
+            const ctx2 = document.getElementById('messageTypeChart')?.getContext('2d');
+            if (ctx2) {
+                const primaryColor = getComputedStyle(document.body).getPropertyValue('--primary-500').trim();
+                const infoColor = getComputedStyle(document.body).getPropertyValue('--info').trim() || '#3b82f6';
+                const successColor = getComputedStyle(document.body).getPropertyValue('--success').trim() || '#10b981';
+                const mutedColor = getComputedStyle(document.body).getPropertyValue('--text-muted').trim() || '#6c757d';
+                const textSecondary = getComputedStyle(document.body).getPropertyValue('--text-secondary').trim();
+                
+                messageChart = new Chart(ctx2, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Text', 'Images', 'Files', 'System'],
+                        datasets: [{
+                            data: [70, 15, 10, 5],
+                            backgroundColor: [primaryColor, infoColor, successColor, mutedColor],
+                            borderWidth: 0,
+                            hoverOffset: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: {
+                            duration: 0  // Disable animations completely
+                        },
+                        hover: {
+                            animationDuration: 0  // Disable hover animations
+                        },
+                        responsiveAnimationDuration: 0,  // Disable resize animations
+                        cutout: '60%',
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: { 
+                                    color: textSecondary,
+                                    padding: 20,
+                                    usePointStyle: true,
+                                    pointStyle: 'circle'
+                                }
+                            },
+                            tooltip: {
+                                enabled: true,
+                                backgroundColor: 'var(--bg-card)',
+                                titleColor: 'var(--text-primary)',
+                                bodyColor: 'var(--text-secondary)',
+                                borderColor: 'var(--border-light)',
+                                borderWidth: 1
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        // Update chart colors when theme changes
+        function updateChartColors() {
+            if (activityChart || messageChart) {
+                // Reinitialize charts to update colors
+                initCharts();
+            }
+        }
+
+        // Resize handler for charts
+        let resizeTimer;
+        window.addEventListener('resize', function() {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(function() {
+                if (activityChart) {
+                    activityChart.resize();
+                }
+                if (messageChart) {
+                    messageChart.resize();
+                }
+            }, 250);
+        });
+
+        // ========== LOADING STATES ==========
+        document.querySelectorAll('form').forEach(form => {
+            form.addEventListener('submit', function() {
+                const btn = this.querySelector('button[type="submit"]');
+                if (btn && !btn.disabled) {
+                    btn.disabled = true;
+                    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
+                }
+            });
+        });
+
+        // Auto-dismiss alerts
+        setTimeout(() => {
+            document.querySelectorAll('.alert').forEach(alert => {
+                const bsAlert = bootstrap.Alert.getOrCreateInstance(alert);
+                if (bsAlert) {
+                    bsAlert.close();
+                }
+            });
+        }, 5000);
+    </script>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

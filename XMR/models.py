@@ -56,6 +56,22 @@ class UserProfile(TimeStampedModel):
             models.Index(fields=['phone_number']),
             models.Index(fields=['-created_at']),
         ]
+
+
+    online_status = models.BooleanField(default=False)
+    last_seen = models.DateTimeField(null=True, blank=True)
+    away_mode = models.BooleanField(default=False)
+    
+    # Chat preferences
+    chat_notifications = models.BooleanField(default=True)
+    chat_sounds = models.BooleanField(default=True)
+    avatar = models.ImageField(upload_to='avatars/', blank=True, null=True)
+    
+    class Meta:
+        indexes = [
+            # ... existing indexes ...
+            models.Index(fields=['online_status', 'last_seen']),  # Add this
+        ]   
     
     def save(self, *args, **kwargs):
         if not self.referral_code:
@@ -963,3 +979,596 @@ class AdminDashboard:
                 )['total'] or 0,
             }
         }
+
+
+# ==================== CHAT SYSTEM MODELS ====================
+
+class ChatRoom(TimeStampedModel):
+    """
+    Chat room model for group conversations.
+    """
+    ROOM_TYPES = [
+        ('PUBLIC', 'Public Room'),
+        ('PRIVATE', 'Private Room'),
+        ('DIRECT', 'Direct Message'),
+        ('INVESTMENT', 'Investment Discussion'),
+        ('SUPPORT', 'Support Chat'),
+    ]
+    
+    name = models.CharField(max_length=255, db_index=True)
+    slug = models.SlugField(max_length=255, unique=True, blank=True)
+    room_type = models.CharField(max_length=20, choices=ROOM_TYPES, default='PUBLIC', db_index=True)
+    description = models.TextField(blank=True, max_length=500)
+    
+    # Relationships
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_chat_rooms')
+    participants = models.ManyToManyField(User, related_name='chat_rooms', blank=True)
+    moderators = models.ManyToManyField(User, related_name='moderated_rooms', blank=True)
+    banned_users = models.ManyToManyField(User, related_name='banned_from_rooms', blank=True)
+    
+    # Settings
+    is_active = models.BooleanField(default=True)
+    is_protected = models.BooleanField(default=False, help_text="Requires approval to join")
+    max_participants = models.IntegerField(default=100, validators=[MinValueValidator(2), MaxValueValidator(1000)])
+    password = models.CharField(max_length=128, blank=True, null=True, help_text="Optional password for protected rooms")
+    
+    # Metadata
+    icon = models.CharField(max_length=50, blank=True, help_text="FontAwesome or emoji icon")
+    color = models.CharField(max_length=20, default='primary')
+    last_activity = models.DateTimeField(auto_now=True)
+    
+    # Stats
+    total_messages = models.IntegerField(default=0, editable=False)
+    online_count = models.IntegerField(default=0, editable=False)
+    
+    class Meta:
+        ordering = ['-last_activity', 'name']
+        indexes = [
+            models.Index(fields=['slug']),
+            models.Index(fields=['room_type', 'is_active']),
+            models.Index(fields=['-last_activity']),
+        ]
+        verbose_name = "Chat Room"
+        verbose_name_plural = "Chat Rooms"
+    
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            # Generate slug from name
+            base_slug = slugify(self.name)
+            slug = base_slug
+            counter = 1
+            while ChatRoom.objects.filter(slug=slug).exists():
+                slug = f"{base_slug}-{counter}"
+                counter += 1
+            self.slug = slug
+        super().save(*args, **kwargs)
+    
+    def add_participant(self, user):
+        """Add user to room participants"""
+        if user not in self.participants.all() and user not in self.banned_users.all():
+            self.participants.add(user)
+            self.log_activity(user, 'JOINED')
+            return True
+        return False
+    
+    def remove_participant(self, user):
+        """Remove user from room participants"""
+        if user in self.participants.all():
+            self.participants.remove(user)
+            self.log_activity(user, 'LEFT')
+            return True
+        return False
+    
+    def ban_user(self, user, moderator, reason=""):
+        """Ban user from room"""
+        if user in self.participants.all():
+            self.participants.remove(user)
+        self.banned_users.add(user)
+        self.log_activity(moderator, 'BAN', target_user=user, reason=reason)
+    
+    def unban_user(self, user, moderator):
+        """Unban user from room"""
+        self.banned_users.remove(user)
+        self.log_activity(moderator, 'UNBAN', target_user=user)
+    
+    def make_moderator(self, user, admin_user):
+        """Make user a moderator"""
+        if user in self.participants.all():
+            self.moderators.add(user)
+            self.log_activity(admin_user, 'MOD_ADD', target_user=user)
+    
+    def remove_moderator(self, user, admin_user):
+        """Remove moderator status"""
+        self.moderators.remove(user)
+        self.log_activity(admin_user, 'MOD_REMOVE', target_user=user)
+    
+    def log_activity(self, user, action, target_user=None, reason=""):
+        """Log room activity"""
+        ChatActivity.objects.create(
+            room=self,
+            user=user,
+            action=action,
+            target_user=target_user,
+            reason=reason
+        )
+    
+    def can_join(self, user):
+        """Check if user can join room"""
+        if user in self.banned_users.all():
+            return False, "You are banned from this room"
+        if self.participants.count() >= self.max_participants:
+            return False, "Room is full"
+        if self.is_protected and self.password:
+            return False, "Password required"  # Password check done separately
+        return True, "Allowed"
+    
+    def get_online_users(self):
+        """Get currently online users in this room"""
+        # This will be updated via WebSocket
+        return self.participants.filter(
+            profile__online_status=True
+        )[:50]
+    
+    def update_online_count(self):
+        """Update online count (called by WebSocket)"""
+        self.online_count = self.participants.filter(
+            profile__online_status=True
+        ).count()
+        self.save(update_fields=['online_count'])
+    
+    def __str__(self):
+        return f"{self.name} ({self.room_type})"
+
+
+class ChatMessage(TimeStampedModel):
+    """
+    Individual chat messages with rich features.
+    """
+    MESSAGE_TYPES = [
+        ('TEXT', 'Text Message'),
+        ('SYSTEM', 'System Message'),
+        ('JOIN', 'User Joined'),
+        ('LEAVE', 'User Left'),
+        ('INVESTMENT', 'Investment Update'),
+        ('PAYOUT', 'Payout Notification'),
+        ('ALERT', 'Alert'),
+        ('IMAGE', 'Image'),
+        ('FILE', 'File'),
+    ]
+    
+    message_id = models.CharField(max_length=50, unique=True, default=uuid.uuid4, editable=False)
+    room = models.ForeignKey(ChatRoom, on_delete=models.CASCADE, related_name='messages')
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='chat_messages')
+    
+    # Message content
+    message_type = models.CharField(max_length=20, choices=MESSAGE_TYPES, default='TEXT', db_index=True)
+    content = models.TextField(blank=True)
+    
+    # Rich content
+    image = models.ImageField(upload_to='chat/images/%Y/%m/%d/', blank=True, null=True)
+    file = models.FileField(upload_to='chat/files/%Y/%m/%d/', blank=True, null=True)
+    file_name = models.CharField(max_length=255, blank=True)
+    file_size = models.IntegerField(blank=True, null=True)
+    
+    # Metadata
+    is_edited = models.BooleanField(default=False)
+    is_deleted = models.BooleanField(default=False)
+    is_pinned = models.BooleanField(default=False)
+    is_announcement = models.BooleanField(default=False)
+    
+    # Reply to
+    reply_to = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='replies')
+    
+    # Mentions
+    mentions = models.ManyToManyField(User, related_name='mentioned_in_messages', blank=True)
+    
+    # Read receipts
+    read_by = models.ManyToManyField(User, related_name='read_messages', blank=True)
+    
+    # Investment integration (optional)
+    investment = models.ForeignKey(Investment, on_delete=models.SET_NULL, null=True, blank=True, related_name='chat_messages')
+    transaction = models.ForeignKey(Transaction, on_delete=models.SET_NULL, null=True, blank=True, related_name='chat_messages')
+    
+    class Meta:
+        ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['room', '-created_at']),
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['message_type', 'created_at']),
+            models.Index(fields=['is_pinned', 'room']),
+        ]
+    
+    def save(self, *args, **kwargs):
+        if not self.pk:  # New message
+            # Update room total messages count
+            ChatRoom.objects.filter(pk=self.room.pk).update(
+                total_messages=models.F('total_messages') + 1
+            )
+        super().save(*args, **kwargs)
+    
+    def mark_as_read(self, user):
+        """Mark message as read by user"""
+        if user not in self.read_by.all():
+            self.read_by.add(user)
+    
+    def get_read_count(self):
+        """Get number of users who read this message"""
+        return self.read_by.count()
+    
+    def soft_delete(self):
+        """Soft delete message"""
+        self.is_deleted = True
+        self.content = "[This message has been deleted]"
+        self.save()
+    
+    def format_for_websocket(self):
+        """Format message for WebSocket transmission"""
+        return {
+            'id': str(self.message_id),
+            'type': self.message_type,
+            'content': self.content if not self.is_deleted else "[Deleted]",
+            'user': {
+                'id': self.user.id if self.user else None,
+                'username': self.user.username if self.user else 'System',
+                'avatar': getattr(self.user, 'profile', None).avatar.url if self.user and hasattr(self.user, 'profile') and self.user.profile.avatar else None,
+            },
+            'timestamp': self.created_at.isoformat(),
+            'is_edited': self.is_edited,
+            'is_deleted': self.is_deleted,
+            'reply_to_id': str(self.reply_to.message_id) if self.reply_to else None,
+            'mentions': [{'id': u.id, 'username': u.username} for u in self.mentions.all()],
+            'read_count': self.get_read_count(),
+            'attachment': {
+                'has_image': bool(self.image),
+                'image_url': self.image.url if self.image else None,
+                'has_file': bool(self.file),
+                'file_name': self.file_name,
+                'file_size': self.file_size,
+            } if self.image or self.file else None,
+        }
+    
+    def __str__(self):
+        return f"{self.message_id} - {self.user.username if self.user else 'System'}: {self.content[:50]}"
+
+
+class ChatActivity(TimeStampedModel):
+    """
+    Track user activities in chat rooms (for logging/moderation).
+    """
+    ACTIVITY_TYPES = [
+        ('JOINED', 'Joined Room'),
+        ('LEFT', 'Left Room'),
+        ('BAN', 'User Banned'),
+        ('UNBAN', 'User Unbanned'),
+        ('MOD_ADD', 'Moderator Added'),
+        ('MOD_REMOVE', 'Moderator Removed'),
+        ('KICK', 'User Kicked'),
+        ('MUTE', 'User Muted'),
+        ('UNMUTE', 'User Unmuted'),
+        ('PIN', 'Message Pinned'),
+        ('UNPIN', 'Message Unpinned'),
+        ('CLEAR', 'Chat Cleared'),
+    ]
+    
+    room = models.ForeignKey(ChatRoom, on_delete=models.CASCADE, related_name='activities')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='chat_activities')
+    action = models.CharField(max_length=20, choices=ACTIVITY_TYPES, db_index=True)
+    
+    target_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='targeted_activities')
+    message = models.ForeignKey(ChatMessage, on_delete=models.SET_NULL, null=True, blank=True)
+    
+    reason = models.TextField(blank=True)
+    ip_address = models.GenericIPAddressField(blank=True, null=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['room', '-created_at']),
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['action', '-created_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.user.username} {self.action} in {self.room.name}"
+
+
+class ChatNotification(models.Model):
+    """
+    User notification preferences for chat.
+    """
+    NOTIFICATION_TYPES = [
+        ('ALL', 'All Messages'),
+        ('MENTIONS', 'Only Mentions'),
+        ('NONE', 'No Notifications'),
+    ]
+    
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='chat_notification_settings')
+    
+    # Global settings
+    sound_enabled = models.BooleanField(default=True)
+    desktop_notifications = models.BooleanField(default=True)
+    email_notifications = models.BooleanField(default=False)
+    
+    # Room-specific settings (JSON field)
+    room_settings = models.JSONField(default=dict, blank=True, 
+        help_text="Format: {'room_id': {'mute': bool, 'notification_type': 'ALL/MENTIONS/NONE'}}")
+    
+    # Do not disturb
+    dnd_enabled = models.BooleanField(default=False)
+    dnd_start = models.TimeField(null=True, blank=True)
+    dnd_end = models.TimeField(null=True, blank=True)
+    
+    class Meta:
+        verbose_name = "Chat Notification Setting"
+        verbose_name_plural = "Chat Notification Settings"
+    
+    def should_notify(self, room, message):
+        """Check if user should be notified about message"""
+        if self.dnd_enabled and self.dnd_start and self.dnd_end:
+            now = timezone.now().time()
+            if self.dnd_start <= now <= self.dnd_end:
+                return False
+        
+        # Check room-specific settings
+        room_setting = self.room_settings.get(str(room.id), {})
+        if room_setting.get('mute', False):
+            return False
+        
+        notify_type = room_setting.get('notification_type', 'ALL')
+        
+        if notify_type == 'NONE':
+            return False
+        elif notify_type == 'MENTIONS':
+            return self.user in message.mentions.all()
+        
+        return True
+    
+    def __str__(self):
+        return f"{self.user.username}'s chat settings"
+
+
+class ChatReaction(models.Model):
+    """
+    Message reactions (like emoji responses).
+    """
+    REACTION_TYPES = [
+        ('👍', 'Thumbs Up'),
+        ('❤️', 'Heart'),
+        ('😂', 'Laughing'),
+        ('😮', 'Wow'),
+        ('😢', 'Sad'),
+        ('👏', 'Applause'),
+        ('🎉', 'Celebration'),
+        ('🔥', 'Fire'),
+        ('💯', '100'),
+        ('❓', 'Question'),
+    ]
+    
+    message = models.ForeignKey(ChatMessage, on_delete=models.CASCADE, related_name='reactions')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='chat_reactions')
+    reaction = models.CharField(max_length=10, choices=REACTION_TYPES)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        unique_together = ['message', 'user', 'reaction']
+        indexes = [
+            models.Index(fields=['message', 'reaction']),
+        ]
+    
+    def __str__(self):
+        return f"{self.user.username} reacted {self.reaction} to message"
+
+
+class DirectMessage(TimeStampedModel):
+    """
+    Direct messaging between two users.
+    """
+    dm_id = models.CharField(max_length=50, unique=True, default=uuid.uuid4, editable=False)
+    user1 = models.ForeignKey(User, on_delete=models.CASCADE, related_name='dm_initiated')
+    user2 = models.ForeignKey(User, on_delete=models.CASCADE, related_name='dm_received')
+    
+    # Last message preview
+    last_message = models.TextField(blank=True, max_length=200)
+    last_message_time = models.DateTimeField(auto_now=True)
+    
+    # Unread counts
+    user1_unread = models.IntegerField(default=0)
+    user2_unread = models.IntegerField(default=0)
+    
+    # Status
+    user1_blocked = models.BooleanField(default=False)
+    user2_blocked = models.BooleanField(default=False)
+    user1_muted = models.BooleanField(default=False)
+    user2_muted = models.BooleanField(default=False)
+    
+    class Meta:
+        unique_together = ['user1', 'user2']
+        ordering = ['-last_message_time']
+        indexes = [
+            models.Index(fields=['user1', '-last_message_time']),
+            models.Index(fields=['user2', '-last_message_time']),
+        ]
+    
+    def get_other_user(self, user):
+        """Get the other participant"""
+        return self.user2 if user == self.user1 else self.user1
+    
+    def increment_unread(self, sender):
+        """Increment unread count for recipient"""
+        if sender == self.user1:
+            self.user2_unread += 1
+        else:
+            self.user1_unread += 1
+        self.save()
+    
+    def mark_as_read(self, user):
+        """Mark all messages as read for user"""
+        if user == self.user1:
+            self.user1_unread = 0
+        else:
+            self.user2_unread = 0
+        self.save()
+    
+    def __str__(self):
+        return f"DM: {self.user1.username} - {self.user2.username}"
+
+
+class DirectMessageContent(TimeStampedModel):
+    """
+    Individual direct messages.
+    """
+    dm = models.ForeignKey(DirectMessage, on_delete=models.CASCADE, related_name='messages')
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_dms')
+    content = models.TextField()
+    
+    is_read = models.BooleanField(default=False)
+    read_at = models.DateTimeField(null=True, blank=True)
+    
+    is_delivered = models.BooleanField(default=False)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['dm', '-created_at']),
+            models.Index(fields=['sender', '-created_at']),
+            models.Index(fields=['is_read', 'dm']),
+        ]
+    
+    def mark_as_read(self):
+        """Mark message as read"""
+        self.is_read = True
+        self.read_at = timezone.now()
+        self.save()
+    
+    def mark_as_delivered(self):
+        """Mark message as delivered"""
+        self.is_delivered = True
+        self.delivered_at = timezone.now()
+        self.save()
+    
+    def __str__(self):
+        return f"{self.sender.username}: {self.content[:50]}"
+
+
+# ==================== CHAT SIGNALS ====================
+
+@receiver(post_save, sender=User)
+def create_chat_notification_settings(sender, instance, created, **kwargs):
+    """Create chat notification settings for new users"""
+    if created:
+        ChatNotification.objects.get_or_create(user=instance)
+
+
+@receiver(post_save, sender=ChatMessage)
+def create_mention_notifications(sender, instance, created, **kwargs):
+    """Create notifications for mentions"""
+    if created and instance.mentions.exists():
+        # This will be handled by WebSocket/Channels for real-time
+        pass
+
+
+@receiver(post_save, sender=ChatRoom)
+def create_room_activity(sender, instance, created, **kwargs):
+    """Log room creation"""
+    if created and instance.created_by:
+        ChatActivity.objects.create(
+            room=instance,
+            user=instance.created_by,
+            action='JOINED'
+        )
+
+
+# ==================== CHAT UTILITIES ====================
+
+def slugify(text):
+    """Simple slugify function"""
+    import re
+    text = text.lower()
+    text = re.sub(r'[^\w\s-]', '', text)
+    text = re.sub(r'[-\s]+', '-', text)
+    return text.strip('-')
+
+
+class ChatDashboard:
+    """Helper class for chat dashboard statistics"""
+    
+    @staticmethod
+    def get_stats():
+        """Get chat system statistics"""
+        from django.db.models import Count, Avg
+        
+        today = timezone.now().date()
+        week_ago = today - timezone.timedelta(days=7)
+        
+        return {
+            'rooms': {
+                'total': ChatRoom.objects.count(),
+                'active_today': ChatRoom.objects.filter(last_activity__date=today).count(),
+                'public': ChatRoom.objects.filter(room_type='PUBLIC').count(),
+                'private': ChatRoom.objects.filter(room_type='PRIVATE').count(),
+                'direct': ChatRoom.objects.filter(room_type='DIRECT').count(),
+            },
+            'messages': {
+                'total': ChatMessage.objects.count(),
+                'today': ChatMessage.objects.filter(created_at__date=today).count(),
+                'this_week': ChatMessage.objects.filter(created_at__date__gte=week_ago).count(),
+                'avg_per_room': ChatMessage.objects.values('room').annotate(
+                    count=Count('id')
+                ).aggregate(avg=models.Avg('count'))['avg'] or 0,
+            },
+            'users': {
+                'active_chatters': User.objects.filter(
+                    chat_messages__created_at__date=today
+                ).distinct().count(),
+                'users_in_chat': User.objects.filter(
+                    chat_rooms__isnull=False
+                ).distinct().count(),
+                'online_now': User.objects.filter(
+                    profile__online_status=True
+                ).count(),
+            },
+            'activity': {
+                'joins': ChatActivity.objects.filter(action='JOINED', created_at__date=today).count(),
+                'leaves': ChatActivity.objects.filter(action='LEFT', created_at__date=today).count(),
+                'reports': 0, 
+                
+            }
+        }
+
+
+
+class ChatNotificationMessage(models.Model):
+    """
+    Actual notification messages sent to users
+    """
+    NOTIFICATION_TYPES = [
+        ('INVITE', 'Room Invite'),
+        ('JOIN', 'User Joined'),
+        ('LEAVE', 'User Left'),
+        ('BAN', 'User Banned'),
+        ('UNBAN', 'User Unbanned'),
+        ('MOD_ADD', 'Moderator Added'),
+        ('MOD_REMOVE', 'Moderator Removed'),
+        ('EVENT', 'Room Event'),
+        ('ANNOUNCEMENT', 'Announcement'),
+        ('ROOM_DELETED', 'Room Deleted'),
+    ]
+    
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='chat_notification_messages')
+    notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPES, db_index=True)
+    message = models.CharField(max_length=255)
+    related_object_id = models.IntegerField(null=True, blank=True)  # ID of related object (room, message, etc.)
+    read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'read', '-created_at']),
+            models.Index(fields=['notification_type', '-created_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.notification_type} - {self.created_at}"
+

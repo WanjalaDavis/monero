@@ -37,14 +37,25 @@ CSRF_TRUSTED_ORIGINS = [
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'channels',
     'XMR',
 ]
+
+
+ASGI_APPLICATION = "Monero.asgi.application"
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {"hosts": [("127.0.0.1", 6379)]},
+    },
+}
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -95,7 +106,6 @@ DATABASES = {
 
 
 
-
 # DATABASES = {
 #     'default': {
 #         'ENGINE': 'django.db.backends.mysql',
@@ -103,7 +113,10 @@ DATABASES = {
 #         'USER': 'root',            
 #         'PASSWORD': '',            
 #         'HOST': '127.0.0.1',       
-#         'PORT': '3306',            
+#         'PORT': '3306',  
+#         'OPTIONS': {
+#             'charset': 'utf8mb4',  
+#         },          
 #     }
 # }
 
@@ -149,6 +162,9 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 
 # Default primary key field type

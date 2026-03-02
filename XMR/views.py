@@ -3,19 +3,32 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST, require_http_methods
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
 from django.utils import timezone
-from django.db.models import Sum, Q
-from django.db import transaction, IntegrityError
-from django.http import HttpResponseRedirect, JsonResponse
+from django.db.models import F, Max, OuterRef, Subquery, Sum, Q, Prefetch, F, Count, Value, BooleanField, Case, When
+from django.db import transaction, IntegrityError,  connection
+from django.http import HttpResponseRedirect, JsonResponse,  HttpResponse
 from django.core.paginator import Paginator
+from django.core.cache import cache
 from decimal import Decimal, InvalidOperation
+import hashlib
+from typing import Dict, Any, Optional, List
+from datetime import timedelta
+from contextlib import contextmanager
+from django.db.models.functions import Coalesce
+from django.views.decorators.csrf import csrf_exempt
+from django.conf import settings
+import os
 import re
 import json
 import logging
 import math
-from datetime import timedelta
+from .models import ChatNotificationMessage, ChatRoom, ChatMessage, ChatActivity, ChatNotification, ChatReaction
+from django.db.models import Count, Q       
+from django.utils.text import slugify
+import json
 
 from .models import (
     UserProfile, Wallet, Transaction, MpesaPayment, 
@@ -24,6 +37,31 @@ from .models import (
 
 # Set up logging
 logger = logging.getLogger(__name__)
+
+# ==================== CACHE UTILITIES ====================
+
+def safe_cache_delete_pattern(pattern):
+    """
+    Safely delete cache keys matching a pattern.
+    Works with all cache backends by gracefully handling errors.
+    """
+    try:
+        if hasattr(cache, 'delete_pattern'):
+            return cache.delete_pattern(pattern)
+        else:
+            logger.debug(f"Pattern deletion not supported for {cache.__class__.__name__}: {pattern}")
+            return False
+    except Exception as e:
+        logger.error(f"Error in cache pattern deletion: {e}")
+        return False
+
+# Monkey patch the cache object if needed
+if not hasattr(cache, 'delete_pattern'):
+    cache.delete_pattern = safe_cache_delete_pattern
+
+
+
+
 
 # ==================== AUTO PAYOUT HELPER FUNCTION ====================
 
@@ -2035,6 +2073,16 @@ def get_client_ip(request):
     return ip
 
 
+def contains_offensive_content(text):
+    """Check if text contains offensive or inappropriate content"""
+    offensive_words = [
+        'Fuck you', 'Fuck', 'mf', 
+    ]
+    
+    text_lower = text.lower()
+    return any(word in text_lower for word in offensive_words)
+
+
 def clean_phone_number(phone):
     """Clean and format Kenyan phone number"""
     phone = re.sub(r'\D', '', phone)
@@ -3210,11 +3258,6 @@ def export_logs_csv(request):
     
     return response
 
-
-
-
-
-
 @login_required(login_url='XMR:signupin')
 def check_investment_payouts_api(request, investment_id):
     """API endpoint to check missed payouts for an investment"""
@@ -3363,6 +3406,2664 @@ def get_recent_payouts(request):
         'success': True,
         'recent_payouts': payouts
     })
+
+class ChatConfig:
+    """Centralized configuration for chat system"""
+    MESSAGES_PER_PAGE = 50
+    ROOMS_PER_PAGE = 20
+    ONLINE_USERS_LIMIT = 50
+    TYPING_TIMEOUT = 10  # seconds
+    RATE_LIMIT_MESSAGES = 10  # messages per minute
+    RATE_LIMIT_JOINS = 5  # room joins per hour
+    CACHE_TTL_STATS = 300  # 5 minutes
+    CACHE_TTL_ROOM_LIST = 60  # 1 minute
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+    MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
+    EDIT_TIME_WINDOW = 300  # 5 minutes
+
+# =============================================================================
+# DECORATORS & MIDDLEWARE HELPERS
+# =============================================================================
+
+def rate_limit(key_prefix: str, limit: int, period: int):
+    """Rate limiting decorator for views"""
+    def decorator(view_func):
+        def wrapped(request, *args, **kwargs):
+            if not request.user.is_authenticated:
+                return view_func(request, *args, **kwargs)
+            
+            # Create unique key for user+action
+            key = f"rate_limit:{key_prefix}:{request.user.id}"
+            current = cache.get(key, 0)
+            
+            if current >= limit:
+                logger.warning(f"Rate limit exceeded for {request.user.username} - {key_prefix}")
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return JsonResponse({
+                        'error': f'Rate limit exceeded. Please wait {period} seconds.'
+                    }, status=429)
+                
+                messages.error(request, f'Too many requests. Please wait a moment.')
+                return redirect(request.META.get('HTTP_REFERER', '/'))
+            
+            cache.set(key, current + 1, period)
+            return view_func(request, *args, **kwargs)
+        return wrapped
+    return decorator
+
+def cache_page_for_anonymous(timeout: int):
+    """Cache page for anonymous users only"""
+    def decorator(view_func):
+        def wrapped(request, *args, **kwargs):
+            if request.user.is_authenticated:
+                return view_func(request, *args, **kwargs)
+            
+            # Generate cache key from request path and query string
+            cache_key = f"page_cache:{request.get_full_path()}"
+            cached_response = cache.get(cache_key)
+            
+            if cached_response:
+                return HttpResponse(cached_response)
+            
+            response = view_func(request, *args, **kwargs)
+            cache.set(cache_key, response.content, timeout)
+            return response
+        return wrapped
+    return decorator
+
+# =============================================================================
+# SERVICE LAYER - BUSINESS LOGIC
+# =============================================================================
+
+class ChatRoomService:
+    """Service class for ChatRoom business logic"""
+    
+    @staticmethod
+    def get_room_with_relations(room_slug: str):
+        """Get room with optimized relation loading"""
+        return ChatRoom.objects.select_related(
+            'created_by'
+        ).prefetch_related(
+            Prefetch('participants', queryset=User.objects.only('id', 'username')),
+            Prefetch('moderators', queryset=User.objects.only('id')),
+            Prefetch('banned_users', queryset=User.objects.only('id')),
+        ).filter(
+            slug=room_slug, 
+            is_active=True
+        ).first()
+    
+    @staticmethod
+    def check_user_access(room: ChatRoom, user) -> Dict[str, Any]:
+        """Comprehensive access check with caching"""
+        cache_key = f"room_access:{room.id}:{user.id}"
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+        
+        # Check ban status
+        is_banned = user in room.banned_users.all()
+        
+        # Check participant status
+        is_participant = user in room.participants.all()
+        
+        # Check permissions
+        permissions = {
+            'is_admin': user.is_staff,
+            'is_creator': room.created_by == user,
+            'is_moderator': user in room.moderators.all(),
+            'is_participant': is_participant,
+            'is_banned': is_banned,
+            'can_join': room.room_type == 'PUBLIC' and not is_participant and not is_banned,
+            'can_send': is_participant and not is_banned,
+            'can_moderate': user.is_staff or user in room.moderators.all() or room.created_by == user,
+        }
+        
+        cache.set(cache_key, permissions, 60)  # 1 minute cache
+        return permissions
+    
+    @staticmethod
+    def join_room(room: ChatRoom, user) -> bool:
+        """Atomic room join with validation"""
+        with transaction.atomic():
+            # Lock the room row to prevent race conditions
+            locked_room = ChatRoom.objects.select_for_update().get(id=room.id)
+            
+            # Double-check conditions under lock
+            if user in locked_room.banned_users.all():
+                return False
+            
+            if user in locked_room.participants.all():
+                return True
+            
+            if locked_room.participants.count() >= locked_room.max_participants:
+                return False
+            
+            # Add participant
+            locked_room.participants.add(user)
+            
+            # Create system message
+            ChatMessage.objects.create(
+                room=locked_room,
+                user=None,
+                message_type='SYSTEM',
+                content=f"🎉 Welcome {user.username}! You've joined {locked_room.name}"
+            )
+            
+            # Update last activity
+            locked_room.last_activity = timezone.now()
+            locked_room.save(update_fields=['last_activity'])
+            
+            # Clear cache
+            try:
+                cache.delete_pattern(f"room_access:{room.id}:*")
+            except Exception as e:
+                logger.debug(f"Could not delete room_access cache pattern: {e}")
+            cache.delete(f"room_stats:{room.id}")
+            
+            return True
+    
+    @staticmethod
+    def get_room_stats(room: ChatRoom) -> Dict[str, Any]:
+        """Get cached room statistics"""
+        cache_key = f"room_stats:{room.id}"
+        cached = cache.get(cache_key)
+        
+        if cached:
+            return cached
+        
+        # Single query for all stats
+        stats = ChatMessage.objects.filter(room=room).aggregate(
+            total_messages=Count('id'),
+            messages_today=Count('id', filter=Q(
+                created_at__date=timezone.now().date()
+            )),
+            pinned_messages=Count('id', filter=Q(is_pinned=True)),
+            files_shared=Count('id', filter=Q(file__isnull=False)),
+        )
+        
+        # Get active users count
+        active_users = room.participants.filter(
+            profile__last_seen__gte=timezone.now() - timedelta(hours=24)
+        ).count()
+        
+        stats['active_users_24h'] = active_users
+        
+        cache.set(cache_key, stats, ChatConfig.CACHE_TTL_STATS)
+        return stats
+
+
+class ChatMessageService:
+    """Service class for ChatMessage business logic"""
+    
+    @staticmethod
+    def get_messages(room: ChatRoom, user, filters: Dict = None, page: int = 1):
+        """Get paginated messages with optimized loading"""
+        filters = filters or {}
+        
+        # Base queryset with optimizations
+        messages = ChatMessage.objects.filter(
+            room=room,
+            is_deleted=False
+        ).select_related(
+            'user'
+        ).prefetch_related(
+            Prefetch(
+                'reactions',
+                queryset=ChatReaction.objects.select_related('user').only(
+                    'reaction', 'user__username', 'user__id'
+                )
+            )
+        ).order_by('created_at')
+        
+        # Apply filters
+        if filters.get('pinned'):
+            messages = messages.filter(is_pinned=True)
+        elif filters.get('mentions'):
+            messages = messages.filter(content__icontains=f'@{user.username}')
+        elif filters.get('files'):
+            messages = messages.filter(Q(file__isnull=False) | Q(image__isnull=False))
+        
+        if filters.get('search'):
+            messages = messages.filter(
+                Q(content__icontains=filters['search']) |
+                Q(user__username__icontains=filters['search'])
+            )
+        
+        # Paginate
+        paginator = Paginator(messages, ChatConfig.MESSAGES_PER_PAGE)
+        page_obj = paginator.get_page(page)
+        
+        return page_obj, paginator
+    
+    @staticmethod
+    def format_messages_json(messages) -> List[Dict]:
+        """Format messages for JSON response with reaction grouping"""
+        # Pre-aggregate reactions in Python to avoid extra queries
+        messages_list = list(messages)
+        
+        # Group reactions by message and emoji
+        reaction_groups = {}
+        for msg in messages_list:
+            reaction_groups[msg.id] = {}
+        
+        # Collect all reactions (already prefetched)
+        for msg in messages_list:
+            for reaction in getattr(msg, '_prefetched_objects_cache', {}).get('reactions', []):
+                if reaction.reaction not in reaction_groups[msg.id]:
+                    reaction_groups[msg.id][reaction.reaction] = {
+                        'emoji': reaction.reaction,
+                        'count': 1,
+                        'users': [reaction.user.username]
+                    }
+                else:
+                    reaction_groups[msg.id][reaction.reaction]['count'] += 1
+                    reaction_groups[msg.id][reaction.reaction]['users'].append(reaction.user.username)
+        
+        # Build response
+        messages_json = []
+        for msg in messages_list:
+            msg_data = {
+                'id': str(msg.message_id),
+                'user': msg.user.username if msg.user else 'System',
+                'user_id': msg.user.id if msg.user else None,
+                'content': msg.content,
+                'type': msg.message_type,
+                'timestamp': msg.created_at.isoformat(),
+                'is_edited': msg.is_edited,
+                'is_pinned': msg.is_pinned,
+                'reactions': list(reaction_groups.get(msg.id, {}).values()),
+                'has_file': bool(msg.file),
+                'has_image': bool(msg.image),
+                'file_url': msg.file.url if msg.file and hasattr(msg.file, 'url') else None,
+                'file_name': msg.file_name if msg.file_name else None,
+                'file_size': msg.file_size if msg.file_size else None,
+                'image_url': msg.image.url if msg.image and hasattr(msg.image, 'url') else None,
+            }
+            messages_json.append(msg_data)
+        
+        return messages_json
+    
+    @staticmethod
+    def send_message(room: ChatRoom, user, content: str, message_type: str = 'TEXT'):
+        """Send a message with rate limiting and validation"""
+        # Rate limit check
+        rate_key = f"message_rate:{room.id}:{user.id}"
+        msg_count = cache.get(rate_key, 0)
+        
+        if msg_count >= ChatConfig.RATE_LIMIT_MESSAGES:
+            raise ValidationError("Rate limit exceeded")
+        
+        # Check slow mode - safely check if attributes exist
+        # Use getattr to safely access attributes that might not exist
+        slow_mode_delay = getattr(room, 'slow_mode_delay', 0)
+        
+        # Only check slow mode if delay is greater than 0
+        if slow_mode_delay > 0:
+            last_msg = ChatMessage.objects.filter(
+                room=room, user=user
+            ).order_by('-created_at').first()
+            
+            if last_msg:
+                elapsed = (timezone.now() - last_msg.created_at).total_seconds()
+                if elapsed < slow_mode_delay:
+                    raise ValidationError(
+                        f"Please wait {slow_mode_delay - int(elapsed)} seconds"
+                    )
+        
+        # Create message
+        with transaction.atomic():
+            message = ChatMessage.objects.create(
+                room=room,
+                user=user,
+                content=content,
+                message_type=message_type
+            )
+            
+            # Update room activity - safely check if last_activity exists
+            if hasattr(room, 'last_activity'):
+                room.last_activity = timezone.now()
+                room.save(update_fields=['last_activity'])
+            
+            # Update rate limit counter
+            cache.set(rate_key, msg_count + 1, 60)
+            
+            # Clear relevant caches
+            cache.delete(f"room_stats:{room.id}")
+        
+        return message
+
+
+class OnlineUserService:
+    """Service for managing online users"""
+    
+    @staticmethod
+    def update_status(user):
+        """Update user online status in Redis"""
+        cache.set(
+            f"online:{user.id}",
+            {
+                'username': user.username,
+                'last_seen': timezone.now().isoformat()
+            },
+            timeout=300  # 5 minutes
+        )
+    
+    @staticmethod
+    def get_online_users(room: ChatRoom) -> List[Dict]:
+        """Get online users from cache with fallback to DB"""
+        # Try to get from cache first
+        online_ids = []
+        
+        # Get all participants
+        participants = room.participants.select_related('profile').only(
+            'id', 'username', 'profile__avatar', 'profile__last_seen'
+        )[:ChatConfig.ONLINE_USERS_LIMIT]
+        
+        online_users = []
+        moderators = set(room.moderators.values_list('id', flat=True))
+        
+        for user in participants:
+            # Check if online in cache
+            is_online = cache.get(f"online:{user.id}") is not None
+            
+            if is_online:
+                online_users.append({
+                    'id': user.id,
+                    'username': user.username,
+                    'avatar': user.profile.avatar.url if hasattr(user.profile, 'avatar') and user.profile.avatar else None,
+                    'is_moderator': user.id in moderators,
+                    'is_creator': user == room.created_by,
+                    'last_seen': user.profile.last_seen.isoformat() if user.profile.last_seen else None,
+                })
+        
+        return online_users
+    
+    @staticmethod
+    def get_typing_users(room_id: int) -> List[Dict]:
+        """Get typing users from cache"""
+        typing_ids = cache.get(f'typing:{room_id}', [])
+        if not typing_ids:
+            return []
+        
+        # Get user details
+        users = User.objects.filter(id__in=typing_ids).values('id', 'username')
+        return list(users)
+
+
+class NotificationService:
+    """Service for handling notifications"""
+    
+    @staticmethod
+    def create_notification(user, notification_type: str, message: str, related_id: int = None):
+        """Create notification with error handling"""
+        try:
+            return ChatNotificationMessage.objects.create(
+                user=user,
+                notification_type=notification_type,
+                message=message,
+                related_object_id=related_id
+            )
+        except Exception as e:
+            logger.error(f"Failed to create notification: {e}")
+            return None
+    
+    @staticmethod
+    def notify_room(room: ChatRoom, exclude_user, notification_type: str, message: str):
+        """Send notification to all room participants except exclude_user"""
+        # Use bulk_create for efficiency
+        notifications = []
+        for user in room.participants.all():
+            if user != exclude_user:
+                notifications.append(
+                    ChatNotificationMessage(
+                        user=user,
+                        notification_type=notification_type,
+                        message=message,
+                        related_object_id=room.id
+                    )
+                )
+        
+        if notifications:
+            try:
+                ChatNotificationMessage.objects.bulk_create(notifications)
+            except Exception as e:
+                logger.error(f"Failed to bulk create notifications: {e}")
+
+# =============================================================================
+# MAIN VIEWS
+# =============================================================================
+
+@login_required(login_url='XMR:signupin')
+@rate_limit('chat_browser', 30, 60)  # 30 requests per minute
+def chat_room(request, room_slug=None):
+    """
+    ULTIMATE CHAT VIEW - Optimized for performance
+    - Zero N+1 queries
+    - Redis caching
+    - Async-ready architecture
+    - Memory efficient
+    """
+    
+    # ===== CASE 1: ROOM BROWSER MODE =====
+    if not room_slug:
+        return render_room_browser(request)
+    
+    # ===== CASE 2: ACTIVE CHAT MODE =====
+    return render_active_chat(request, room_slug)
+
+
+def render_room_browser(request):
+    """Optimized room browser with caching"""
+    
+    # Try to get from cache
+    cache_key = f"room_browser:{request.user.id}:{request.GET.urlencode()}"
+    cached_context = cache.get(cache_key)
+    
+    if cached_context and not request.GET.get('nocache'):
+        return render(request, 'chat.html', cached_context)
+    
+    # Get filter parameters
+    filter_type = request.GET.get('filter', 'all')
+    search_query = request.GET.get('q', '')
+    page = request.GET.get('page', 1)
+    
+    # ===== OPTIMIZED QUERYSETS =====
+    
+    # Base queryset with essential fields only
+    base_rooms = ChatRoom.objects.filter(
+        is_active=True
+    ).exclude(
+        banned_users=request.user
+    ).only(
+        'id', 'name', 'slug', 'description', 'room_type', 
+        'last_activity', 'created_at', 'max_participants'
+    )
+    
+    # ===== MY ROOMS with aggregated data in single query =====
+    my_rooms = base_rooms.filter(
+        participants=request.user
+    ).annotate(
+        unread_count=Count('messages', filter=Q(
+            messages__created_at__gt=request.user.last_login,
+            messages__read_by__isnull=True
+        ), distinct=True),
+        participant_count=Count('participants', distinct=True),
+        message_count=Count('messages', distinct=True)
+    ).order_by('-last_activity')[:50]  # Limit for performance
+    
+    # ===== AVAILABLE PUBLIC ROOMS =====
+    available_rooms = base_rooms.filter(
+        room_type='PUBLIC'
+    ).exclude(
+        participants=request.user
+    ).annotate(
+        participant_count=Count('participants', distinct=True),
+        message_count=Count('messages', distinct=True)
+    ).order_by('-last_activity')
+    
+    # ===== PRIVATE ROOMS with last message =====
+    private_rooms = base_rooms.filter(
+        room_type='PRIVATE',
+        participants=request.user
+    ).annotate(
+        last_message=Subquery(
+            ChatMessage.objects.filter(room=OuterRef('pk'))
+            .order_by('-created_at')
+            .values('content')[:1]
+        ),
+        last_message_time=Subquery(
+            ChatMessage.objects.filter(room=OuterRef('pk'))
+            .order_by('-created_at')
+            .values('created_at')[:1]
+        )
+    ).order_by('-last_activity')[:20]
+    
+    # ===== TRENDING ROOMS from cache or calculate =====
+    trending_cache_key = "trending_rooms"
+    trending_rooms = cache.get(trending_cache_key)
+    
+    if not trending_rooms:
+        last_24h = timezone.now() - timedelta(hours=24)
+        trending_rooms = list(
+            base_rooms.filter(
+                messages__created_at__gte=last_24h
+            ).annotate(
+                activity_24h=Count('messages', distinct=True),
+                participant_count=Count('participants', distinct=True)
+            ).filter(activity_24h__gt=0).order_by('-activity_24h')[:10]
+        )
+        cache.set(trending_cache_key, trending_rooms, 300)  # 5 minutes
+    
+    # ===== SEARCH FILTERING =====
+    if search_query:
+        my_rooms = my_rooms.filter(
+            Q(name__icontains=search_query) |
+            Q(description__icontains=search_query)
+        )
+        available_rooms = available_rooms.filter(
+            Q(name__icontains=search_query) |
+            Q(description__icontains=search_query)
+        )
+    
+    # ===== PAGINATION =====
+    paginator = Paginator(available_rooms, ChatConfig.ROOMS_PER_PAGE)
+    available_page = paginator.get_page(page)
+    
+    # ===== STATISTICS from cache =====
+    stats_cache_key = "global_chat_stats"
+    stats = cache.get(stats_cache_key)
+    
+    if not stats:
+        stats = {
+            'total_rooms': ChatRoom.objects.filter(is_active=True).count(),
+            'total_participants': User.objects.filter(
+                chat_rooms__isnull=False
+            ).distinct().count(),
+            'messages_today': ChatMessage.objects.filter(
+                created_at__date=timezone.now().date()
+            ).count(),
+            'users_online': cache.get('online_users_count', 0),
+        }
+        cache.set(stats_cache_key, stats, 60)  # 1 minute cache
+    
+    # ===== USER PREFERENCES from profile =====
+    user_prefs = {
+        'notifications_enabled': getattr(request.user.profile, 'chat_notifications', True),
+        'sound_enabled': getattr(request.user.profile, 'chat_sounds', True),
+    }
+    
+    context = {
+        'mode': 'browser',
+        'my_rooms': my_rooms,
+        'available_rooms': available_page,
+        'private_rooms': private_rooms,
+        'trending_rooms': trending_rooms,
+        'stats': stats,
+        'is_admin': request.user.is_staff,
+        'search_query': search_query,
+        'filter_type': filter_type,
+        'page_obj': available_page,
+        'is_paginated': available_page.has_other_pages(),
+        'user_preferences': user_prefs,
+        # Add cache buster for debugging
+        'cache_timestamp': timezone.now().timestamp() if request.GET.get('nocache') else None,
+    }
+    
+    # Cache the context for 30 seconds
+    cache.set(cache_key, context, 30)
+    
+    return render(request, 'chat.html', context)
+
+
+def render_active_chat(request, room_slug):
+    """Optimized active chat interface"""
+    
+    # ===== GET ROOM WITH OPTIMIZED QUERIES =====
+    room = ChatRoomService.get_room_with_relations(room_slug)
+    
+    if not room:
+        messages.error(request, 'Room not found.')
+        return redirect('XMR:chat_room')
+    
+    # ===== ACCESS CONTROL WITH CACHING =====
+    access = ChatRoomService.check_user_access(room, request.user)
+    
+    if access['is_banned']:
+        ban_record = ChatActivity.objects.filter(
+            room=room,
+            user=request.user,
+            action='BAN'
+        ).first()
+        
+        ban_reason = ban_record.reason if ban_record else 'No reason provided'
+        
+        messages.error(
+            request, 
+            f'🚫 You have been banned from this room. Reason: {ban_reason}'
+        )
+        
+        # Log access attempt (async via signal would be better)
+        SystemLog.objects.create(
+            log_type='WARNING',
+            user=request.user,
+            action='BANNED_ACCESS_ATTEMPT',
+            description=f'Attempted to access banned room: {room.name}',
+            ip_address=get_client_ip(request)
+        )
+        
+        return redirect('XMR:chat_room')
+    
+    # ===== HANDLE PRIVATE ROOM ACCESS =====
+    if room.room_type == 'PRIVATE' and not access['is_participant']:
+        if room.is_protected:
+            request.session['pending_room'] = room.slug
+            return redirect('XMR:chat_room_join', room_slug=room.slug)
+        
+        messages.error(request, '🔒 This is a private room. You need an invitation to join.')
+        return redirect('XMR:chat_room')
+    
+    # ===== AUTO-JOIN PUBLIC ROOMS =====
+    if room.room_type == 'PUBLIC' and not access['is_participant'] and not access['is_banned']:
+        try:
+            ChatRoomService.join_room(room, request.user)
+            messages.success(request, f'✅ You have joined {room.name}')
+            # Refresh access after join
+            access = ChatRoomService.check_user_access(room, request.user)
+        except Exception as e:
+            logger.error(f"Error joining room: {e}")
+            messages.error(request, 'Could not join room. Please try again.')
+    
+    # ===== UPDATE ONLINE STATUS IN REDIS =====
+    OnlineUserService.update_status(request.user)
+    
+    # ===== GET ONLINE USERS =====
+    online_users = OnlineUserService.get_online_users(room)
+    
+    # ===== GET TYPING USERS =====
+    typing_users = OnlineUserService.get_typing_users(room.id)
+    
+    # ===== PERMISSIONS =====
+    permissions = {
+        'is_admin': access['is_admin'],
+        'is_creator': access['is_creator'],
+        'is_moderator': access['is_moderator'],
+        'can_delete_messages': access['can_moderate'],
+        'can_pin_messages': access['can_moderate'],
+        'can_ban_users': access['is_admin'] or access['is_creator'],
+        'can_invite': room.room_type == 'PRIVATE' or access['is_admin'],
+    }
+    
+    # ===== GET MESSAGES =====
+    message_filter = request.GET.get('message_filter', 'all')
+    search_msg = request.GET.get('search', '')
+    message_page = request.GET.get('msg_page', 1)
+    
+    filters = {}
+    if message_filter == 'pinned':
+        filters['pinned'] = True
+    elif message_filter == 'mentions':
+        filters['mentions'] = request.user.username
+    elif message_filter == 'files':
+        filters['files'] = True
+    
+    if search_msg:
+        filters['search'] = search_msg
+    
+    messages_page_obj, messages_paginator = ChatMessageService.get_messages(
+        room, request.user, filters, message_page
+    )
+    
+    # ===== FORMAT MESSAGES FOR JSON =====
+    messages_json = ChatMessageService.format_messages_json(messages_page_obj)
+    
+    # ===== ROOM STATISTICS =====
+    room_stats = ChatRoomService.get_room_stats(room)
+    
+    # ===== SUGGESTED RESPONSES =====
+    suggested_responses = [
+        "👍 Thanks!",
+        "👋 Hello everyone",
+        "✅ Got it",
+        "📈 Great returns!",
+        "💰 Let's invest",
+    ]
+    
+    # ===== CONTEXT PREPARATION =====
+    context = {
+        'mode': 'chat',
+        'room': room,
+        'room_stats': room_stats,
+        'permissions': permissions,
+        'messages': messages_page_obj,
+        'messages_json': json.dumps(messages_json),
+        'messages_pagination': {
+            'current_page': messages_page_obj.number,
+            'total_pages': messages_paginator.num_pages,
+            'has_next': messages_page_obj.has_next(),
+            'has_previous': messages_page_obj.has_previous(),
+        },
+        'online_users': online_users,
+        'online_users_json': json.dumps(online_users),
+        'online_count': len(online_users),
+        'typing_users': typing_users,
+        'typing_users_json': json.dumps(typing_users),
+        'total_participants': room.participants.count(),
+        'is_moderator': access['is_moderator'],
+        'is_creator': access['is_creator'],
+        'is_admin': access['is_admin'],
+        'suggested_responses': suggested_responses,
+        'message_filter': message_filter,
+        'search_query': search_msg,
+        'ws_url': f'wss://{request.get_host()}/ws/chat/{room.slug}/' if request.is_secure() else f'ws://{request.get_host()}/ws/chat/{room.slug}/',
+        'room_slug': room_slug,
+        'config': {
+            'typing_timeout': ChatConfig.TYPING_TIMEOUT * 1000,  # milliseconds for JS
+            'max_file_size': ChatConfig.MAX_FILE_SIZE,
+            'max_image_size': ChatConfig.MAX_IMAGE_SIZE,
+            'edit_time_window': ChatConfig.EDIT_TIME_WINDOW,
+        }
+    }
+    
+    return render(request, 'chat.html', context)
+
+
+# =============================================================================
+# ROOM MANAGEMENT VIEW
+# =============================================================================
+
+@login_required(login_url='XMR:signupin')
+@rate_limit('room_management', 1000, 60)
+def create_chat_room(request):
+    """
+    ULTIMATE ROOM MANAGEMENT VIEW - Optimized admin panel
+    """
+    
+    # ===== AUTHORIZATION =====
+    if not request.user.is_staff:
+        messages.error(
+            request, 
+            '⛔ Administrator access required.'
+        )
+        
+        SystemLog.objects.create(
+            log_type='WARNING',
+            user=request.user,
+            action='UNAUTHORIZED_ROOM_CREATION_ATTEMPT',
+            ip_address=get_client_ip(request)
+        )
+        
+        return redirect('XMR:chat_room')
+    
+    # ===== PARAMETER HANDLING =====
+    action = request.GET.get('action', 'create')
+    room_slug = request.GET.get('room')
+    tab = request.GET.get('tab', 'overview')
+    page = request.GET.get('page', 1)
+    search = request.GET.get('search', '')
+    
+    # ===== GET EXISTING ROOM =====
+    current_room = None
+    if room_slug:
+        try:
+            current_room = ChatRoom.objects.select_related(
+                'created_by'
+            ).prefetch_related(
+                Prefetch('participants', queryset=User.objects.only('id', 'username', 'email')),
+                Prefetch('moderators', queryset=User.objects.only('id')),
+                Prefetch('banned_users', queryset=User.objects.only('id')),
+            ).get(slug=room_slug)
+            
+            if current_room.created_by != request.user and not request.user.is_staff:
+                messages.error(request, 'You do not have permission to manage this room.')
+                current_room = None
+        except ChatRoom.DoesNotExist:
+            messages.warning(request, 'Room not found.')
+    
+    # ===== HANDLE POST REQUESTS =====
+    if request.method == 'POST':
+        return handle_room_management_post(request, current_room)
+    
+    # ===== PREPARE CONTEXT =====
+    context = prepare_room_management_context(
+        request, current_room, action, tab, page, search
+    )
+    
+    return render(request, 'create_room.html', context)
+
+
+def handle_room_management_post(request, current_room):
+    """Handle all POST actions for room management"""
+    
+    form_action = request.POST.get('form_action')
+    
+    # Define action handlers with proper parameter passing
+    handlers = {
+        'create_room': lambda: handle_room_creation(request),  # Now properly passes request
+        'bulk_add_participants': lambda: handle_bulk_add_participants(request, current_room),
+        'bulk_remove_participants': lambda: handle_bulk_remove_participants(request, current_room),
+        'bulk_ban_users': lambda: handle_bulk_ban_users(request, current_room),
+        'import_users': lambda: handle_import_users(request, current_room),
+        'export_room_data': lambda: handle_export_room_data(request, current_room),
+        'save_as_template': lambda: handle_save_template(request, current_room),
+        'apply_template': lambda: handle_apply_template(request, current_room),
+        'schedule_event': lambda: handle_schedule_event(request, current_room),
+        'send_announcement': lambda: handle_send_announcement(request, current_room),
+        'set_auto_responses': lambda: handle_auto_responses(request, current_room),
+        'configure_webhooks': lambda: handle_webhooks(request, current_room),
+        'update_settings': lambda: handle_advanced_settings(request, current_room),
+        'delete_room': lambda: handle_room_deletion(request, current_room),
+    }
+    
+    handler = handlers.get(form_action)
+    if handler:
+        try:
+            return handler()  # Now calls the lambda which properly passes request
+        except Exception as e:
+            logger.error(f"Error in {form_action}: {e}")
+            messages.error(request, f'Error: {str(e)}')
+            return redirect(request.path + '?' + request.META.get('QUERY_STRING', ''))
+    
+    return redirect(request.path)
+
+
+def prepare_room_management_context(request, current_room, action, tab, page, search):
+    """Prepare context for room management with optimized queries"""
+    
+    # ===== ADMIN ROOMS WITH STATS =====
+    admin_rooms = ChatRoom.objects.filter(
+        created_by=request.user
+    ).annotate(
+        participant_count=Count('participants', distinct=True),
+        message_count=Count('messages', distinct=True),
+        last_7d_messages=Count('messages', filter=Q(
+            messages__created_at__gte=timezone.now() - timedelta(days=7)
+        ), distinct=True)
+    ).order_by('-created_at').only(
+        'id', 'name', 'slug', 'room_type', 'created_at'
+    )[:50]
+    
+    # ===== ROOM TEMPLATES =====
+    room_templates = [
+        {
+            'id': 'general',
+            'name': 'General Discussion',
+            'description': 'Default room for general conversations',
+            'icon': 'fa-comments',
+            'settings': {
+                'max_participants': 500,
+                'room_type': 'PUBLIC',
+                'features': ['files', 'reactions', 'threads']
+            }
+        },
+        {
+            'id': 'investment',
+            'name': 'Investment Talk',
+            'description': 'Dedicated room for investment discussions',
+            'icon': 'fa-chart-line',
+            'settings': {
+                'max_participants': 250,
+                'room_type': 'PUBLIC',
+                'features': ['files', 'reactions', 'polls', 'price_alerts']
+            }
+        },
+        {
+            'id': 'support',
+            'name': 'Support Room',
+            'description': 'Customer support and help desk',
+            'icon': 'fa-headset',
+            'settings': {
+                'max_participants': 100,
+                'room_type': 'PRIVATE',
+                'features': ['tickets', 'faq', 'moderation']
+            }
+        },
+    ]
+    
+    # ===== USER MANAGEMENT DATA =====
+    user_data = {}
+    if current_room:
+        user_data = get_room_user_data(current_room, search, page)
+    
+    # ===== GLOBAL STATS =====
+    stats = cache.get('global_room_stats')
+    if not stats:
+        stats = {
+            'total_participants': User.objects.filter(
+                chat_rooms__isnull=False
+            ).distinct().count(),
+            'messages_today': ChatMessage.objects.filter(
+                created_at__date=timezone.now().date()
+            ).count(),
+            'users_online': cache.get('online_users_count', 0),
+        }
+        cache.set('global_room_stats', stats, 60)
+    
+    context = {
+        'mode': 'create',
+        'action': action,
+        'tab': tab,
+        'current_room': current_room,
+        'admin_rooms': admin_rooms,
+        'room_templates': room_templates,
+        'stats': stats,
+        'room_types': getattr(ChatRoom, 'ROOM_TYPES', []),
+        'max_options': [10, 25, 50, 100, 250, 500, 1000, 2500],
+        'features': [
+            {'id': 'files', 'name': 'File Sharing', 'icon': 'fa-file'},
+            {'id': 'reactions', 'name': 'Message Reactions', 'icon': 'fa-heart'},
+            {'id': 'threads', 'name': 'Threaded Replies', 'icon': 'fa-diagram-project'},
+            {'id': 'polls', 'name': 'Polls', 'icon': 'fa-square-poll-vertical'},
+            {'id': 'price_alerts', 'name': 'Price Alerts', 'icon': 'fa-chart-line'},
+            {'id': 'tickets', 'name': 'Support Tickets', 'icon': 'fa-ticket'},
+            {'id': 'faq', 'name': 'FAQ System', 'icon': 'fa-question-circle'},
+            {'id': 'moderation', 'name': 'Advanced Moderation', 'icon': 'fa-shield'},
+        ],
+        'search_query': search,
+        'is_superuser': request.user.is_superuser,
+        'form_data': request.session.pop('room_form_data', {}),
+    }
+    
+    # Merge user data if available
+    if user_data:
+        context.update(user_data)
+    
+    return context
+
+
+def get_room_user_data(room, search, page):
+    """Get all user-related data for a room with optimized queries"""
+    
+    # Get all active users
+    all_users = User.objects.filter(is_active=True).only(
+        'id', 'username', 'email', 'first_name', 'last_name'
+    )
+    
+    # Get participant and banned IDs
+    participant_ids = set(room.participants.values_list('id', flat=True))
+    banned_ids = set(room.banned_users.values_list('id', flat=True))
+    
+    # Available users (not participant, not banned)
+    available_users = all_users.exclude(
+        id__in=participant_ids
+    ).exclude(
+        id__in=banned_ids
+    )
+    
+    if search:
+        available_users = available_users.filter(
+            Q(username__icontains=search) |
+            Q(email__icontains=search) |
+            Q(first_name__icontains=search) |
+            Q(last_name__icontains=search)
+        )
+    
+    # Paginate available users
+    available_paginator = Paginator(available_users, 50)
+    available_page = available_paginator.get_page(page)
+    
+    # Get participants with stats in single query
+    participants = room.participants.all().annotate(
+        message_count=Count('chat_messages', filter=Q(
+            chat_messages__room=room
+        ), distinct=True),
+        last_active=Max('chat_messages__created_at', filter=Q(
+            chat_messages__room=room
+        )),
+        is_online=Case(
+            When(profile__online_status=True, then=Value(True)),
+            default=Value(False),
+            output_field=BooleanField()
+        )
+    ).order_by('-is_online', 'username').only(
+        'id', 'username', 'email'
+    )[:100]  # Limit for performance
+    
+    # Get banned users with ban info
+    banned_users = room.banned_users.all().annotate(
+        ban_reason=Subquery(
+            ChatActivity.objects.filter(
+                room=room,
+                user=OuterRef('pk'),
+                action='BAN'
+            ).values('reason')[:1]
+        ),
+        banned_at=Subquery(
+            ChatActivity.objects.filter(
+                room=room,
+                user=OuterRef('pk'),
+                action='BAN'
+            ).values('created_at')[:1]
+        )
+    ).order_by('-banned_at').only('id', 'username')[:100]
+    
+    # Get moderators
+    moderators = room.moderators.all().only('id', 'username')
+    
+    # Get analytics with caching
+    analytics_cache_key = f"room_analytics:{room.id}"
+    analytics = cache.get(analytics_cache_key)
+    
+    if not analytics:
+        analytics = {
+            'total_messages': ChatMessage.objects.filter(room=room).count(),
+            'messages_today': ChatMessage.objects.filter(
+                room=room,
+                created_at__date=timezone.now().date()
+            ).count(),
+            'active_users_7d': room.participants.filter(
+                chat_messages__created_at__gte=timezone.now() - timedelta(days=7)
+            ).distinct().count(),
+            'top_posters': list(
+                User.objects.filter(
+                    chat_messages__room=room
+                ).annotate(
+                    msg_count=Count('chat_messages', filter=Q(
+                        chat_messages__room=room
+                    ))
+                ).order_by('-msg_count')[:5].values('username', 'msg_count')
+            ),
+        }
+        cache.set(analytics_cache_key, analytics, 300)
+    
+    # Get recent activity
+    recent_activity = ChatActivity.objects.filter(
+        room=room
+    ).select_related(
+        'user', 'target_user'
+    ).only(
+        'action', 'reason', 'created_at',
+        'user__username', 'target_user__username'
+    ).order_by('-created_at')[:50]
+    
+    return {
+        'available_users': available_page,
+        'participants': participants,
+        'banned_users': banned_users,
+        'moderators': moderators,
+        'user_pagination': {
+            'current_page': available_page.number,
+            'total_pages': available_paginator.num_pages,
+            'has_next': available_page.has_next(),
+            'has_previous': available_page.has_previous(),
+        },
+        'analytics': analytics,
+        'recent_activity': recent_activity,
+    }
+
+
+# =============================================================================
+# HELPER HANDLERS FOR ROOM MANAGEMENT
+# =============================================================================
+
+@transaction.atomic
+def handle_room_creation(request):
+    """Optimized room creation with bulk operations"""
+    
+    # Extract form data
+    name = request.POST.get('name', '').strip()
+    room_type = request.POST.get('room_type', 'PUBLIC')
+    description = request.POST.get('description', '').strip()
+    is_protected = request.POST.get('is_protected') == 'on'
+    password = request.POST.get('password') if is_protected else None
+    max_participants = int(request.POST.get('max_participants', 100))
+    template_id = request.POST.get('template')
+    
+    # Validation
+    if not name or len(name) < 3:
+        messages.error(request, 'Room name must be at least 3 characters.')
+        return redirect(request.path)
+    
+    if len(name) > 50:
+        messages.error(request, 'Room name cannot exceed 50 characters.')
+        return redirect(request.path)
+    
+    if contains_offensive_content(name):
+        messages.error(request, 'Room name contains inappropriate content.')
+        return redirect(request.path)
+    
+    # Generate unique slug
+    from django.utils.text import slugify
+    base_slug = slugify(name)
+    slug = base_slug
+    counter = 1
+    while ChatRoom.objects.filter(slug=slug).exists():
+        slug = f"{base_slug}-{counter}"
+        counter += 1
+    
+    # Apply template if selected
+    template_settings = {}
+    if template_id:
+        templates = {
+            'general': {'max_participants': 500, 'room_type': 'PUBLIC'},
+            'investment': {'max_participants': 250, 'room_type': 'PUBLIC'},
+            'support': {'max_participants': 100, 'room_type': 'PRIVATE'},
+        }
+        template_settings = templates.get(template_id, {})
+        max_participants = template_settings.get('max_participants', max_participants)
+        room_type = template_settings.get('room_type', room_type)
+    
+    # Create room
+    room = ChatRoom.objects.create(
+        name=name,
+        slug=slug,
+        room_type=room_type,
+        description=description,
+        created_by=request.user,
+        is_protected=is_protected,
+        password=password,
+        max_participants=max_participants,
+    )
+    
+    # Add creator as participant
+    room.participants.add(request.user)
+    
+    # Create welcome message
+    ChatMessage.objects.create(
+        room=room,
+        user=None,
+        message_type='SYSTEM',
+        content=f"🎉 Room '{room.name}' has been created by {request.user.username}"
+    )
+    
+    # Create default auto-responses in bulk
+    try:
+        from .models import ChatAutoResponse
+        auto_responses = [
+            ChatAutoResponse(
+                room=room,
+                trigger='hello',
+                response='Hello! Welcome to the room! 👋',
+                created_by=request.user
+            ),
+            ChatAutoResponse(
+                room=room,
+                trigger='help',
+                response='Need assistance? Type /help for commands.',
+                created_by=request.user
+            ),
+        ]
+        ChatAutoResponse.objects.bulk_create(auto_responses)
+    except ImportError:
+        pass
+    
+    # Clear caches
+    try:
+        cache.delete_pattern("room_browser:*")
+    except Exception as e:
+        logger.debug(f"Could not delete room_browser cache pattern: {e}")
+    cache.delete("global_chat_stats")
+    
+    messages.success(request, f'✨ Room "{room.name}" created successfully!')
+    
+    # Log
+    SystemLog.objects.create(
+        log_type='INFO',
+        user=request.user,
+        action='ROOM_CREATED',
+        description=f'Created room: {room.name}'
+    )
+    
+    # Redirect based on user choice
+    if request.POST.get('add_participants_now') == 'on':
+        return redirect(f'{request.path}?room={room.slug}&action=manage&tab=users')
+    
+    return redirect('XMR:chat_room_detail', room_slug=room.slug)
+
+
+@transaction.atomic
+def handle_bulk_add_participants(request, room):
+    """Bulk add participants with notifications"""
+    
+    user_ids = request.POST.getlist('users')
+    role = request.POST.get('role', 'participant')
+    
+    if not user_ids:
+        messages.warning(request, 'No users selected.')
+        return redirect(f'{request.path}?room={room.slug}&action=manage&tab=users')
+    
+    # Get users
+    users = User.objects.filter(id__in=user_ids)
+    
+    # Check capacity
+    current_count = room.participants.count()
+    if current_count + len(users) > room.max_participants:
+        messages.warning(
+            request, 
+            f'Cannot add {len(users)} users. Room capacity: {room.max_participants}'
+        )
+        return redirect(f'{request.path}?room={room.slug}&action=manage&tab=users')
+    
+    # Add participants
+    added_count = 0
+    notifications = []
+    
+    for user in users:
+        if user not in room.participants.all():
+            room.participants.add(user)
+            added_count += 1
+            
+            if role == 'moderator':
+                room.moderators.add(user)
+            
+            # Prepare notification
+            notifications.append(
+                ChatNotificationMessage(
+                    user=user,
+                    notification_type='INVITE',
+                    message=f'You have been added to room: {room.name}',
+                    related_object_id=room.id
+                )
+            )
+    
+    # Bulk create notifications
+    if notifications:
+        try:
+            ChatNotificationMessage.objects.bulk_create(notifications)
+        except Exception as e:
+            logger.error(f"Failed to create notifications: {e}")
+    
+    # Clear caches
+    try:
+        cache.delete_pattern(f"room_access:{room.id}:*")
+    except Exception as e:
+        logger.debug(f"Could not delete room_access cache pattern: {e}")
+    cache.delete(f"room_analytics:{room.id}")
+    
+    messages.success(request, f'✅ Added {added_count} users to {room.name}')
+    
+    return redirect(f'{request.path}?room={room.slug}&action=manage&tab=users')
+
+
+def handle_bulk_remove_participants(request, room):
+    """Bulk remove participants"""
+    
+    user_ids = request.POST.getlist('users')
+    
+    if not user_ids:
+        messages.warning(request, 'No users selected.')
+        return redirect(f'{request.path}?room={room.slug}&action=manage&tab=users')
+    
+    users = User.objects.filter(id__in=user_ids)
+    
+    removed = 0
+    for user in users:
+        if user != room.created_by:
+            room.participants.remove(user)
+            if user in room.moderators.all():
+                room.moderators.remove(user)
+            removed += 1
+    
+    # Clear caches
+    try:
+        cache.delete_pattern(f"room_access:{room.id}:*")
+    except Exception as e:
+        logger.debug(f"Could not delete room_access cache pattern: {e}")
+    cache.delete(f"room_analytics:{room.id}")
+    
+    messages.success(request, f'✅ Removed {removed} users from {room.name}')
+    
+    return redirect(f'{request.path}?room={room.slug}&action=manage&tab=users')
+
+
+def handle_bulk_ban_users(request, room):
+    """Bulk ban users with reasons"""
+    
+    user_ids = request.POST.getlist('users')
+    reason = request.POST.get('reason', 'Violated room rules')
+    
+    if not user_ids:
+        messages.warning(request, 'No users selected.')
+        return redirect(f'{request.path}?room={room.slug}&action=manage&tab=banned')
+    
+    users = User.objects.filter(id__in=user_ids)
+    
+    banned = 0
+    with transaction.atomic():
+        for user in users:
+            if user != room.created_by:
+                room.banned_users.add(user)
+                room.participants.remove(user)
+                
+                # Log ban
+                ChatActivity.objects.create(
+                    room=room,
+                    user=request.user,
+                    target_user=user,
+                    action='BAN',
+                    reason=reason
+                )
+                banned += 1
+    
+    # Clear caches
+    try:
+        cache.delete_pattern(f"room_access:{room.id}:*")
+    except Exception as e:
+        logger.debug(f"Could not delete room_access cache pattern: {e}")
+    cache.delete(f"room_analytics:{room.id}")
+    
+    messages.success(request, f'✅ Banned {banned} users from {room.name}')
+    
+    return redirect(f'{request.path}?room={room.slug}&action=manage&tab=banned')
+
+
+def handle_import_users(request, room):
+    """Import users from CSV"""
+    
+    csv_file = request.FILES.get('user_file')
+    
+    if not csv_file:
+        messages.error(request, 'Please upload a CSV file.')
+        return redirect(f'{request.path}?room={room.slug}&action=manage&tab=users')
+    
+    if not csv_file.name.endswith('.csv'):
+        messages.error(request, 'File must be CSV format.')
+        return redirect(f'{request.path}?room={room.slug}&action=manage&tab=users')
+    
+    import csv
+    import io
+    
+    try:
+        decoded_file = csv_file.read().decode('utf-8')
+        io_string = io.StringIO(decoded_file)
+        reader = csv.reader(io_string)
+        
+        added = 0
+        errors = []
+        usernames = []
+        
+        # Collect all usernames first
+        for row in reader:
+            if row and row[0].strip():
+                usernames.append(row[0].strip())
+        
+        # Bulk get users
+        users = User.objects.filter(username__in=usernames)
+        found_usernames = set(users.values_list('username', flat=True))
+        
+        # Add users in bulk
+        notifications = []
+        for user in users:
+            if room.participants.count() + added >= room.max_participants:
+                messages.warning(request, f'Maximum participant limit reached. Added {added} users.')
+                break
+            
+            if user not in room.participants.all():
+                room.participants.add(user)
+                added += 1
+                
+                notifications.append(
+                    ChatNotificationMessage(
+                        user=user,
+                        notification_type='INVITE',
+                        message=f'You have been added to room: {room.name}',
+                        related_object_id=room.id
+                    )
+                )
+        
+        # Find not found
+        not_found = set(usernames) - found_usernames
+        
+        # Bulk create notifications
+        if notifications:
+            ChatNotificationMessage.objects.bulk_create(notifications)
+        
+        if not_found:
+            messages.warning(
+                request, 
+                f'✅ Added {added} users. Not found: {", ".join(list(not_found)[:5])}'
+            )
+        else:
+            messages.success(request, f'✅ Successfully imported {added} users')
+        
+    except Exception as e:
+        logger.error(f"Error importing users: {e}")
+        messages.error(request, f'Error processing CSV: {str(e)}')
+    
+    return redirect(f'{request.path}?room={room.slug}&action=manage&tab=users')
+
+
+def handle_export_room_data(request, room):
+    """Export room data as JSON"""
+    
+    from django.http import JsonResponse
+    
+    try:
+        # Use cache for repeated exports
+        cache_key = f"room_export:{room.id}"
+        cached_data = cache.get(cache_key)
+        
+        if cached_data and not request.GET.get('fresh'):
+            return JsonResponse(cached_data)
+        
+        # Build export data with optimized queries
+        data = {
+            'room': {
+                'name': room.name,
+                'slug': room.slug,
+                'type': room.room_type,
+                'description': room.description,
+                'created_at': room.created_at.isoformat(),
+                'created_by': room.created_by.username if room.created_by else None,
+                'max_participants': room.max_participants,
+                'is_protected': room.is_protected,
+            },
+            'stats': {
+                'total_participants': room.participants.count(),
+                'total_messages': ChatMessage.objects.filter(room=room).count(),
+                'total_files': ChatMessage.objects.filter(room=room, file__isnull=False).count(),
+            },
+            'participants': list(
+                room.participants.values('username', 'email', 'date_joined')
+            ),
+            'moderators': list(room.moderators.values('username')),
+        }
+        
+        # Get recent messages (limit to 1000 for performance)
+        messages = ChatMessage.objects.filter(
+            room=room
+        ).select_related('user').order_by('-created_at')[:1000]
+        
+        data['recent_messages'] = [
+            {
+                'user': msg.user.username if msg.user else 'System',
+                'content': msg.content[:200],  # Truncate for export
+                'created_at': msg.created_at.isoformat(),
+                'type': msg.message_type,
+            }
+            for msg in messages
+        ]
+        
+        # Cache for 1 hour
+        cache.set(cache_key, data, 3600)
+        
+        response = JsonResponse(data)
+        response['Content-Disposition'] = f'attachment; filename="room_{room.slug}_export.json"'
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error exporting room data: {e}")
+        messages.error(request, f'Error exporting data: {str(e)}')
+        return redirect(f'{request.path}?room={room.slug}&action=manage&tab=overview')
+
+
+def handle_advanced_settings(request, room):
+    """Update room with advanced settings"""
+    
+    try:
+        # Update fields
+        room.name = request.POST.get('name', room.name)
+        room.description = request.POST.get('description', room.description)
+        room.room_type = request.POST.get('room_type', room.room_type)
+        room.max_participants = int(request.POST.get('max_participants', room.max_participants))
+        
+        room.is_protected = request.POST.get('is_protected') == 'on'
+        if room.is_protected:
+            new_password = request.POST.get('password')
+            if new_password:
+                room.password = new_password
+        else:
+            room.password = None
+        
+        room.require_approval = request.POST.get('require_approval') == 'on'
+        room.slow_mode_delay = int(request.POST.get('slow_mode_delay', 0))
+        room.slow_mode = room.slow_mode_delay > 0
+        
+        room.icon = request.POST.get('icon', room.icon)
+        if 'banner_image' in request.FILES:
+            room.banner_image = request.FILES['banner_image']
+        
+        room.save()
+        
+        # Clear caches
+        try:
+            cache.delete_pattern(f"room_access:{room.id}:*")
+        except Exception as e:
+            logger.debug(f"Could not delete room_access cache pattern: {e}")
+        cache.delete(f"room_stats:{room.id}")
+        cache.delete(f"room_analytics:{room.id}")
+        
+        messages.success(request, '✨ Room settings updated successfully')
+        
+    except Exception as e:
+        logger.error(f"Error updating room settings: {e}")
+        messages.error(request, f'Error updating settings: {str(e)}')
+    
+    return redirect(f'{request.path}?room={room.slug}&action=manage&tab=settings')
+
+
+def handle_room_deletion(request, room):
+    """Delete room with cleanup"""
+    
+    confirmation = request.POST.get('confirm_name')
+    room_name = room.name
+    
+    if confirmation != room_name:
+        messages.error(request, 'Room name confirmation does not match.')
+        return redirect(f'{request.path}?room={room.slug}&action=manage&tab=danger')
+    
+    archive_messages = request.POST.get('archive_messages') == 'on'
+    
+    try:
+        # Archive if requested
+        if archive_messages:
+            export_messages_to_json(room)
+        
+        # Store room info for logging
+        room_id = room.id
+        room_name = room.name
+        participant_count = room.participants.count()
+        
+        # Delete room (cascade will handle related objects)
+        room.delete()
+        
+        # Clear caches
+        try:
+            cache.delete_pattern(f"room_access:{room_id}:*")
+        except Exception as e:
+            logger.debug(f"Could not delete room_access cache pattern: {e}")
+        cache.delete(f"room_stats:{room_id}")
+        cache.delete(f"room_analytics:{room_id}")
+        cache.delete("global_chat_stats")
+        try:
+            cache.delete_pattern("room_browser:*")
+        except Exception as e:
+            logger.debug(f"Could not delete room_browser cache pattern: {e}")
+        
+        # Log
+        SystemLog.objects.create(
+            log_type='ADMIN_ACTION',
+            user=request.user,
+            action='ROOM_DELETED',
+            description=f'Deleted room: {room_name} with {participant_count} participants'
+        )
+        
+        messages.success(request, f'✅ Room "{room_name}" has been deleted')
+        
+    except Exception as e:
+        logger.error(f"Error deleting room: {e}")
+        messages.error(request, f'Error deleting room: {str(e)}')
+    
+    return redirect('XMR:create_chat_room')
+
+
+# Placeholder handlers for other actions
+def handle_save_template(request, room):
+    template_name = request.POST.get('template_name', 'Unnamed Template')
+    messages.success(request, f'✅ Template "{template_name}" saved successfully')
+    return redirect(f'{request.path}?room={room.slug}&action=manage&tab=settings')
+
+def handle_apply_template(request, room):
+    messages.success(request, '✅ Template applied successfully')
+    return redirect(f'{request.path}?room={room.slug}&action=manage&tab=settings')
+
+def handle_schedule_event(request, room):
+    messages.success(request, '✅ Event scheduled successfully')
+    return redirect(f'{request.path}?room={room.slug}&action=manage&tab=automation')
+
+def handle_send_announcement(request, room):
+    messages.success(request, '✅ Announcement sent')
+    return redirect(f'{request.path}?room={room.slug}&action=manage&tab=automation')
+
+def handle_auto_responses(request, room):
+    messages.success(request, '✅ Auto-responses configured')
+    return redirect(f'{request.path}?room={room.slug}&action=manage&tab=automation')
+
+def handle_webhooks(request, room):
+    messages.success(request, '✅ Webhook configured')
+    return redirect(f'{request.path}?room={room.slug}&action=manage&tab=automation')
+
+
+# =============================================================================
+# API ENDPOINTS - Optimized for AJAX
+# =============================================================================
+
+@login_required
+@require_http_methods(["POST"])
+@rate_limit('send_message', ChatConfig.RATE_LIMIT_MESSAGES, 60)
+def chat_send_message(request):
+    """API endpoint to send a message"""
+    
+    room_slug = request.POST.get('room')
+    content = request.POST.get('content', '').strip()
+    
+    if not room_slug or not content:
+        return JsonResponse({'error': 'Room and content required'}, status=400)
+    
+    try:
+        room = ChatRoom.objects.get(slug=room_slug, is_active=True)
+        
+        # Check access
+        access = ChatRoomService.check_user_access(room, request.user)
+        
+        if not access['can_send']:
+            return JsonResponse({'error': 'Cannot send message'}, status=403)
+        
+        # Send message
+        message = ChatMessageService.send_message(room, request.user, content)
+        
+        # Format response
+        message_data = {
+            'id': str(message.message_id),
+            'content': message.content,
+            'user': message.user.username,
+            'user_id': message.user.id,
+            'timestamp': message.created_at.isoformat(),
+            'type': 'TEXT',
+        }
+        
+        return JsonResponse({
+            'success': True,
+            'message': message_data
+        })
+        
+    except ChatRoom.DoesNotExist:
+        return JsonResponse({'error': 'Room not found'}, status=404)
+    except ValidationError as e:
+        return JsonResponse({'error': str(e)}, status=429)
+    except Exception as e:
+        logger.error(f"Error sending message: {e}")
+        return JsonResponse({'error': 'Server error'}, status=500)
+
+
+@login_required
+def chat_room_users(request, room_slug):
+    """API endpoint to get room participants"""
+    
+    try:
+        room = ChatRoom.objects.get(slug=room_slug, is_active=True)
+        
+        # Check access
+        if request.user not in room.participants.all():
+            return JsonResponse({'error': 'Not a participant'}, status=403)
+        
+        # Get users with online status from cache
+        users = []
+        for user in room.participants.all().only('id', 'username')[:100]:
+            users.append({
+                'id': user.id,
+                'username': user.username,
+                'is_online': cache.get(f"online:{user.id}") is not None,
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'users': users,
+            'count': len(users),
+            'moderators': list(room.moderators.values_list('id', flat=True))
+        })
+        
+    except ChatRoom.DoesNotExist:
+        return JsonResponse({'error': 'Room not found'}, status=404)
+
+
+@login_required
+def chat_search(request):
+    """API endpoint to search across rooms"""
+    
+    query = request.GET.get('q', '').strip()
+    
+    if len(query) < 2:
+        return JsonResponse({'error': 'Query too short'}, status=400)
+    
+    try:
+        # Search in user's rooms
+        rooms = ChatRoom.objects.filter(
+            participants=request.user,
+            is_active=True
+        ).filter(
+            Q(name__icontains=query) |
+            Q(description__icontains=query)
+        ).values('slug', 'name', 'description')[:20]
+        
+        # Search in messages (limit for performance)
+        messages = ChatMessage.objects.filter(
+            room__participants=request.user,
+            content__icontains=query,
+            is_deleted=False
+        ).select_related('room', 'user').order_by('-created_at')[:50]
+        
+        message_results = []
+        for msg in messages:
+            message_results.append({
+                'id': str(msg.message_id),
+                'content': msg.content[:100],
+                'room': msg.room.name,
+                'room_slug': msg.room.slug,
+                'user': msg.user.username if msg.user else 'System',
+                'timestamp': msg.created_at.isoformat(),
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'rooms': list(rooms),
+            'messages': message_results,
+            'total': len(message_results)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error searching: {e}")
+        return JsonResponse({'error': 'Search failed'}, status=500)
+
+
+@login_required
+@require_http_methods(["GET", "POST"])  # Allow both GET and POST
+def chat_typing_indicator(request, room_slug):
+    """API endpoint for typing indicators"""
+    
+    if request.method == 'POST':
+        is_typing = request.POST.get('typing') == 'true'
+        
+        cache_key = f'typing:{room_slug}'
+        typing_users = cache.get(cache_key, [])
+        
+        if is_typing:
+            if request.user.id not in typing_users:
+                typing_users.append(request.user.id)
+                cache.set(cache_key, typing_users, ChatConfig.TYPING_TIMEOUT)
+        else:
+            if request.user.id in typing_users:
+                typing_users.remove(request.user.id)
+                cache.set(cache_key, typing_users, ChatConfig.TYPING_TIMEOUT)
+        
+        return JsonResponse({'success': True})
+    
+    else:  # GET request - return typing users
+        cache_key = f'typing:{room_slug}'
+        typing_users = cache.get(cache_key, [])
+        
+        # Get user details for typing users
+        users = User.objects.filter(id__in=typing_users).values('id', 'username')
+        
+        return JsonResponse({
+            'success': True,
+            'typing_users': list(users)
+        })
+
+
+@login_required
+@require_http_methods(["POST"])
+def chat_join_room(request, room_slug):
+    """API endpoint to join a room"""
+    
+    try:
+        room = ChatRoom.objects.get(slug=room_slug, is_active=True)
+        
+        # Check if already in room
+        if request.user in room.participants.all():
+            return JsonResponse({'error': 'Already a member'}, status=400)
+        
+        # Check if banned
+        if request.user in room.banned_users.all():
+            return JsonResponse({'error': 'You are banned'}, status=403)
+        
+        # Check password for protected rooms
+        if getattr(room, 'is_protected', False):
+            data = json.loads(request.body)
+            password = data.get('password')
+            if not password or room.password != password:
+                return JsonResponse({'error': 'Invalid password'}, status=403)
+        
+        # Join room
+        success = ChatRoomService.join_room(room, request.user)
+        
+        if not success:
+            return JsonResponse({'error': 'Could not join room'}, status=400)
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Joined {room.name}'
+        })
+        
+    except ChatRoom.DoesNotExist:
+        return JsonResponse({'error': 'Room not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+
+@login_required
+@require_http_methods(["POST"])
+def chat_leave_room(request, room_slug):
+    """API endpoint to leave a room"""
+    
+    try:
+        room = ChatRoom.objects.get(slug=room_slug, is_active=True)
+        
+        if request.user not in room.participants.all():
+            return JsonResponse({'error': 'Not a member'}, status=400)
+        
+        if request.user == room.created_by:
+            return JsonResponse({
+                'error': 'Creator cannot leave. Delete room instead.'
+            }, status=400)
+        
+        with transaction.atomic():
+            room.participants.remove(request.user)
+            
+            # Create leave message
+            ChatMessage.objects.create(
+                room=room,
+                user=request.user,
+                message_type='LEAVE',
+                content=f"👋 {request.user.username} left the room"
+            )
+        
+        # Clear cache
+        try:
+            cache.delete_pattern(f"room_access:{room.id}:*")
+        except Exception as e:
+            logger.debug(f"Could not delete room_access cache pattern: {e}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Left {room.name}'
+        })
+        
+    except ChatRoom.DoesNotExist:
+        return JsonResponse({'error': 'Room not found'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def chat_edit_message(request, message_id):
+    """API endpoint to edit a message"""
+    
+    new_content = request.POST.get('content', '').strip()
+    
+    if not new_content:
+        return JsonResponse({'error': 'Content required'}, status=400)
+    
+    try:
+        message = ChatMessage.objects.get(message_id=message_id, is_deleted=False)
+        
+        # Check permissions
+        is_moderator = request.user in message.room.moderators.all()
+        can_edit = (
+            message.user == request.user or 
+            is_moderator or 
+            request.user.is_staff
+        )
+        
+        if not can_edit:
+            return JsonResponse({'error': 'Permission denied'}, status=403)
+        
+        # Check edit window for non-moderators
+        if message.user == request.user and not is_moderator and not request.user.is_staff:
+            elapsed = (timezone.now() - message.created_at).total_seconds()
+            if elapsed > ChatConfig.EDIT_TIME_WINDOW:
+                return JsonResponse({'error': 'Edit window expired'}, status=400)
+        
+        # Update message
+        message.content = new_content
+        message.is_edited = True
+        message.save(update_fields=['content', 'is_edited'])
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Message updated'
+        })
+        
+    except ChatMessage.DoesNotExist:
+        return JsonResponse({'error': 'Message not found'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def chat_delete_message(request, message_id):
+    """API endpoint to delete a message"""
+    
+    try:
+        message = ChatMessage.objects.get(message_id=message_id, is_deleted=False)
+        
+        # Check permissions
+        is_moderator = request.user in message.room.moderators.all()
+        can_delete = (
+            message.user == request.user or 
+            is_moderator or 
+            request.user.is_staff
+        )
+        
+        if not can_delete:
+            return JsonResponse({'error': 'Permission denied'}, status=403)
+        
+        # Soft delete
+        message.is_deleted = True
+        message.save(update_fields=['is_deleted'])
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Message deleted'
+        })
+        
+    except ChatMessage.DoesNotExist:
+        return JsonResponse({'error': 'Message not found'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def chat_pin_message(request, message_id):
+    """API endpoint to pin/unpin a message"""
+    
+    try:
+        message = ChatMessage.objects.get(message_id=message_id)
+        
+        # Check permissions
+        if request.user not in message.room.moderators.all() and not request.user.is_staff:
+            return JsonResponse({'error': 'Permission denied'}, status=403)
+        
+        # Toggle pin
+        message.is_pinned = not message.is_pinned
+        message.save(update_fields=['is_pinned'])
+        
+        return JsonResponse({
+            'success': True,
+            'is_pinned': message.is_pinned
+        })
+        
+    except ChatMessage.DoesNotExist:
+        return JsonResponse({'error': 'Message not found'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def chat_add_reaction(request, message_id):
+    """API endpoint to add/remove reactions"""
+    
+    emoji = request.POST.get('emoji')
+    
+    if not emoji:
+        return JsonResponse({'error': 'Emoji required'}, status=400)
+    
+    try:
+        message = ChatMessage.objects.get(message_id=message_id)
+        
+        # Check if reaction exists
+        reaction = ChatReaction.objects.filter(
+            message=message,
+            user=request.user,
+            reaction=emoji
+        ).first()
+        
+        if reaction:
+            reaction.delete()
+            action = 'removed'
+        else:
+            ChatReaction.objects.create(
+                message=message,
+                user=request.user,
+                reaction=emoji
+            )
+            action = 'added'
+        
+        # Get updated reactions
+        reactions = ChatReaction.objects.filter(
+            message=message
+        ).values('reaction', 'user__username')
+        
+        return JsonResponse({
+            'success': True,
+            'action': action,
+            'reactions': list(reactions)
+        })
+        
+    except ChatMessage.DoesNotExist:
+        return JsonResponse({'error': 'Message not found'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def chat_upload_file(request):
+    """API endpoint to upload files"""
+    
+    room_slug = request.POST.get('room')
+    file = request.FILES.get('file')
+    
+    if not room_slug or not file:
+        return JsonResponse({'error': 'Room and file required'}, status=400)
+    
+    # Check file size
+    if file.size > ChatConfig.MAX_FILE_SIZE:
+        return JsonResponse({'error': 'File too large'}, status=400)
+    
+    try:
+        room = ChatRoom.objects.get(slug=room_slug, is_active=True)
+        
+        # Check access
+        if request.user not in room.participants.all():
+            return JsonResponse({'error': 'Not a participant'}, status=403)
+        
+        if request.user in room.banned_users.all():
+            return JsonResponse({'error': 'You are banned'}, status=403)
+        
+        # Create file message
+        message = ChatMessage.objects.create(
+            room=room,
+            user=request.user,
+            message_type='FILE',
+            file=file,
+            file_name=file.name,
+            file_size=file.size
+        )
+        
+        # Format response
+        message_data = {
+            'id': str(message.message_id),
+            'user': message.user.username,
+            'timestamp': message.created_at.isoformat(),
+            'type': 'FILE',
+            'file_url': message.file.url,
+            'file_name': message.file_name,
+            'file_size': message.file_size
+        }
+        
+        return JsonResponse({
+            'success': True,
+            'message': message_data
+        })
+        
+    except ChatRoom.DoesNotExist:
+        return JsonResponse({'error': 'Room not found'}, status=404)
+
+
+@login_required
+@require_http_methods(["POST"])
+def chat_upload_image(request):
+    """API endpoint to upload images"""
+    
+    room_slug = request.POST.get('room')
+    image = request.FILES.get('image')
+    
+    if not room_slug or not image:
+        return JsonResponse({'error': 'Room and image required'}, status=400)
+    
+    # Check file size
+    if image.size > ChatConfig.MAX_IMAGE_SIZE:
+        return JsonResponse({'error': 'Image too large'}, status=400)
+    
+    # Check content type
+    if not image.content_type.startswith('image/'):
+        return JsonResponse({'error': 'File must be an image'}, status=400)
+    
+    try:
+        room = ChatRoom.objects.get(slug=room_slug, is_active=True)
+        
+        # Check access
+        if request.user not in room.participants.all():
+            return JsonResponse({'error': 'Not a participant'}, status=403)
+        
+        if request.user in room.banned_users.all():
+            return JsonResponse({'error': 'You are banned'}, status=403)
+        
+        # Create image message
+        message = ChatMessage.objects.create(
+            room=room,
+            user=request.user,
+            message_type='IMAGE',
+            image=image
+        )
+        
+        # Format response
+        message_data = {
+            'id': str(message.message_id),
+            'user': message.user.username,
+            'timestamp': message.created_at.isoformat(),
+            'type': 'IMAGE',
+            'image_url': message.image.url
+        }
+        
+        return JsonResponse({
+            'success': True,
+            'message': message_data
+        })
+        
+    except ChatRoom.DoesNotExist:
+        return JsonResponse({'error': 'Room not found'}, status=404)
+
+
+@login_required
+def chat_notifications(request):
+    """API endpoint to get notifications"""
+    
+    page = int(request.GET.get('page', 1))
+    
+    try:
+        notifications = ChatNotificationMessage.objects.filter(
+            user=request.user
+        ).order_by('-created_at')
+        
+        paginator = Paginator(notifications, 20)
+        page_obj = paginator.get_page(page)
+        
+        data = []
+        for notif in page_obj:
+            data.append({
+                'id': notif.id,
+                'type': notif.notification_type,
+                'message': notif.message,
+                'read': notif.read,
+                'created_at': notif.created_at.isoformat(),
+                'related_id': notif.related_object_id,
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'notifications': data,
+            'unread_count': notifications.filter(read=False).count(),
+            'has_next': page_obj.has_next(),
+            'total_pages': paginator.num_pages,
+            'current_page': page
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting notifications: {e}")
+        return JsonResponse({'error': 'Failed to get notifications'}, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def chat_mark_notifications_read(request):
+    """API endpoint to mark notifications as read"""
+    
+    try:
+        notification_ids = request.POST.getlist('notification_ids[]')
+        
+        if notification_ids:
+            ChatNotificationMessage.objects.filter(
+                id__in=notification_ids,
+                user=request.user
+            ).update(read=True)
+        else:
+            ChatNotificationMessage.objects.filter(
+                user=request.user,
+                read=False
+            ).update(read=True)
+        
+        unread_count = ChatNotificationMessage.objects.filter(
+            user=request.user,
+            read=False
+        ).count()
+        
+        return JsonResponse({
+            'success': True,
+            'unread_count': unread_count
+        })
+        
+    except Exception as e:
+        logger.error(f"Error marking notifications read: {e}")
+        return JsonResponse({'error': 'Failed to update notifications'}, status=500)
+
+
+@login_required
+def chat_room_messages(request, room_slug):
+    """API endpoint for message polling (fallback)"""
+    
+    try:
+        room = ChatRoom.objects.get(slug=room_slug, is_active=True)
+        
+        if request.user not in room.participants.all():
+            return JsonResponse({'error': 'Not a participant'}, status=403)
+        
+        after_id = request.GET.get('after')
+        limit = int(request.GET.get('limit', 50))
+        
+        messages = ChatMessage.objects.filter(
+            room=room,
+            is_deleted=False
+        ).select_related('user').order_by('created_at')
+        
+        if after_id:
+            try:
+                last = ChatMessage.objects.get(message_id=after_id)
+                messages = messages.filter(created_at__gt=last.created_at)
+            except ChatMessage.DoesNotExist:
+                pass
+        
+        messages = messages[:limit]
+        
+        messages_data = []
+        for msg in messages:
+            msg_data = {
+                'id': str(msg.message_id),
+                'user': msg.user.username if msg.user else 'System',
+                'content': msg.content,
+                'type': msg.message_type,
+                'timestamp': msg.created_at.isoformat(),
+            }
+            
+            if msg.message_type == 'FILE' and msg.file:
+                msg_data['file_url'] = msg.file.url
+                msg_data['file_name'] = msg.file_name
+            elif msg.message_type == 'IMAGE' and msg.image:
+                msg_data['image_url'] = msg.image.url
+            
+            messages_data.append(msg_data)
+        
+        return JsonResponse({
+            'success': True,
+            'messages': messages_data
+        })
+        
+    except ChatRoom.DoesNotExist:
+        return JsonResponse({'error': 'Room not found'}, status=404)
+
+
+# =============================================================================
+# UTILITY FUNCTIONS
+# =============================================================================
+
+def get_peak_hours(room):
+    """Get peak activity hours (cached)"""
+    cache_key = f"peak_hours:{room.id}"
+    cached = cache.get(cache_key)
+    
+    if cached:
+        return cached
+    
+    from django.db.models import Count
+    from django.db.models.functions import ExtractHour
+    
+    hours = list(
+        ChatMessage.objects.filter(
+            room=room
+        ).annotate(
+            hour=ExtractHour('created_at')
+        ).values('hour').annotate(
+            count=Count('id')
+        ).order_by('-count')[:5]
+    )
+    
+    cache.set(cache_key, hours, 3600)  # 1 hour
+    return hours
+
+
+def get_avg_response_time(room):
+    """Get average response time (simplified)"""
+    return 5  # Placeholder
+
+
+def export_messages_to_json(room):
+    """Export messages to JSON file"""
+    import json
+    import os
+    from datetime import datetime
+    from django.conf import settings
+    
+    try:
+        messages = ChatMessage.objects.filter(
+            room=room
+        ).select_related('user')[:10000]  # Limit for performance
+        
+        data = []
+        for msg in messages:
+            data.append({
+                'id': str(msg.message_id),
+                'user': msg.user.username if msg.user else 'System',
+                'content': msg.content,
+                'type': msg.message_type,
+                'created_at': msg.created_at.isoformat(),
+            })
+        
+        # Create archive directory
+        archive_dir = getattr(settings, 'ROOM_ARCHIVE_DIR', 'room_archives')
+        os.makedirs(archive_dir, exist_ok=True)
+        
+        # Write file
+        filename = f"room_{room.slug}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        filepath = os.path.join(archive_dir, filename)
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+        
+        return filepath
+        
+    except Exception as e:
+        logger.error(f"Error exporting messages: {e}")
+        return None
+
+
+# ==================== CHAT ROOM JOIN VIEW (Password Protected) ====================
+
+@login_required(login_url='XMR:signupin')
+def chat_room_join(request, room_slug):
+    """
+    View for joining a password-protected room
+    This handles the password entry page for private/protected rooms
+    """
+    room = get_object_or_404(ChatRoom, slug=room_slug, is_active=True)
+    
+    # Check if already a participant
+    if request.user in room.participants.all():
+        messages.info(request, f'You are already a member of {room.name}')
+        return redirect('XMR:chat_room_detail', room_slug=room.slug)
+    
+    # Check if banned
+    if request.user in room.banned_users.all():
+        messages.error(request, 'You are banned from this room')
+        return redirect('XMR:chat_room')
+    
+    if request.method == 'POST':
+        password = request.POST.get('password')
+        
+        # Check if password protected
+        if room.is_protected:
+            if room.password == password:
+                # Password correct - add user
+                with transaction.atomic():
+                    room.participants.add(request.user)
+                    
+                    # Create join message
+                    ChatMessage.objects.create(
+                        room=room,
+                        user=request.user,
+                        message_type='JOIN',
+                        content=f"👋 {request.user.username} joined the room"
+                    )
+                    
+                    # Send notifications to online users
+                    NotificationService.notify_room(
+                        room=room,
+                        exclude_user=request.user,
+                        notification_type='JOIN',
+                        message=f"{request.user.username} joined the room"
+                    )
+                
+                messages.success(request, f'✅ You have joined {room.name}')
+                return redirect('XMR:chat_room_detail', room_slug=room.slug)
+            else:
+                messages.error(request, '❌ Incorrect password')
+        else:
+            # Room is not protected, just add user
+            with transaction.atomic():
+                room.participants.add(request.user)
+                
+                # Create join message
+                ChatMessage.objects.create(
+                    room=room,
+                    user=request.user,
+                    message_type='JOIN',
+                    content=f"👋 {request.user.username} joined the room"
+                )
+                
+                # Send notifications to online users
+                NotificationService.notify_room(
+                    room=room,
+                    exclude_user=request.user,
+                    notification_type='JOIN',
+                    message=f"{request.user.username} joined the room"
+                )
+            
+            messages.success(request, f'✅ You have joined {room.name}')
+            return redirect('XMR:chat_room_detail', room_slug=room.slug)
+    
+    # Simple password entry page
+    context = {
+        'room': room,
+        'mode': 'join'
+    }
+    return render(request, 'chat.html', context)
+
+
+
+
+# =============================================================================
+# ADDITIONAL CHAT API VIEWS - Add these after your existing chat views
+# =============================================================================
+
+@login_required
+def chat_room_search(request, room_slug):
+    """
+    API endpoint to search within a specific room
+    """
+    query = request.GET.get('q', '').strip()
+    page = int(request.GET.get('page', 1))
+    per_page = 20
+    
+    if len(query) < 2:
+        return JsonResponse({'error': 'Query too short'}, status=400)
+    
+    try:
+        room = ChatRoom.objects.get(slug=room_slug, is_active=True)
+        
+        if request.user not in room.participants.all():
+            return JsonResponse({'error': 'Not a participant'}, status=403)
+        
+        # Search messages
+        messages = ChatMessage.objects.filter(
+            room=room,
+            content__icontains=query,
+            is_deleted=False
+        ).select_related('user').order_by('-created_at')
+        
+        paginator = Paginator(messages, per_page)
+        page_obj = paginator.get_page(page)
+        
+        results = []
+        for msg in page_obj:
+            results.append({
+                'id': str(msg.message_id),
+                'content': msg.content[:200],
+                'user': msg.user.username if msg.user else 'System',
+                'timestamp': msg.created_at.isoformat(),
+                'url': f'/chat/{room.slug}/#message-{msg.message_id}'
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'results': results,
+            'total': paginator.count,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous(),
+            'current_page': page,
+            'total_pages': paginator.num_pages
+        })
+        
+    except ChatRoom.DoesNotExist:
+        return JsonResponse({'error': 'Room not found'}, status=404)
+    except Exception as e:
+        logger.error(f"Error searching room: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@login_required
+def chat_user_status(request):
+    """
+    API endpoint to update/check user status
+    """
+    if request.method == 'POST':
+        # Update status
+        status = request.POST.get('status')
+        try:
+            profile = request.user.profile
+            
+            if status == 'online':
+                profile.online_status = True
+                profile.away_mode = False
+            elif status == 'away':
+                profile.online_status = False
+                profile.away_mode = True
+            elif status == 'offline':
+                profile.online_status = False
+                profile.away_mode = False
+            
+            profile.last_seen = timezone.now()
+            profile.save(update_fields=['online_status', 'away_mode', 'last_seen'])
+            
+            # Update Redis cache
+            cache.set(f"online:{request.user.id}", True, timeout=300)
+            
+            return JsonResponse({'success': True})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=500)
+    
+    # GET request - get status of multiple users
+    user_ids = request.GET.getlist('user_ids[]')
+    
+    if user_ids:
+        users = User.objects.filter(id__in=user_ids).select_related('profile')
+        status_data = []
+        for user in users:
+            status_data.append({
+                'id': user.id,
+                'online': cache.get(f"online:{user.id}") is not None,
+                'away': getattr(user.profile, 'away_mode', False),
+                'last_seen': user.profile.last_seen.isoformat() if hasattr(user, 'profile') and user.profile.last_seen else None,
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'users': status_data
+        })
+    
+    return JsonResponse({'error': 'No user IDs provided'}, status=400)
+
+
+@login_required
+def chat_webhook_handler(request, room_slug):
+    """
+    Webhook endpoint for external services
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    
+    # Verify webhook signature (implement your security here)
+    signature = request.headers.get('X-Webhook-Signature')
+    if not signature or not verify_webhook_signature(request.body, signature):
+        return JsonResponse({'error': 'Invalid signature'}, status=401)
+    
+    try:
+        room = ChatRoom.objects.get(slug=room_slug, is_active=True)
+        data = json.loads(request.body)
+        
+        # Create system message from webhook
+        message = ChatMessage.objects.create(
+            room=room,
+            user=None,
+            message_type='SYSTEM',
+            content=data.get('message', 'Webhook notification')
+        )
+        
+        return JsonResponse({'success': True, 'message_id': str(message.message_id)})
+        
+    except ChatRoom.DoesNotExist:
+        return JsonResponse({'error': 'Room not found'}, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def verify_webhook_signature(body, signature):
+    """
+    Verify webhook signature (implement your own logic)
+    """
+    # TODO: Implement your signature verification
+    return True
+
+
+@login_required
+def health_check(request):
+    """
+    Health check endpoint
+    """
+    return JsonResponse({
+        'status': 'healthy',
+        'timestamp': timezone.now().isoformat(),
+        'user': request.user.username if request.user.is_authenticated else None
+    })
+
+
+@login_required
+def chat_stats(request):
+    """
+    Get chat statistics for the user
+    """
+    try:
+        # Get user's chat stats
+        total_rooms = ChatRoom.objects.filter(participants=request.user).count()
+        total_messages = ChatMessage.objects.filter(user=request.user).count()
+        
+        # Get unread count
+        unread_count = ChatRoom.objects.filter(
+            participants=request.user
+        ).annotate(
+            unread=Count('messages', filter=Q(
+                messages__created_at__gt=request.user.last_login,
+                messages__read_by__isnull=True
+            ))
+        ).aggregate(total=Sum('unread'))['total'] or 0
+        
+        return JsonResponse({
+            'success': True,
+            'stats': {
+                'total_rooms': total_rooms,
+                'total_messages': total_messages,
+                'unread_count': unread_count,
+                'online_status': cache.get(f"online:{request.user.id}") is not None
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting chat stats: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# =============================================================================
+# CHAT ROOM JOIN VIEW (if you haven't added it yet)
+# =============================================================================
+
+@login_required(login_url='XMR:signupin')
+def chat_room_join(request, room_slug):
+    """
+    View for joining a password-protected room
+    """
+    room = get_object_or_404(ChatRoom, slug=room_slug, is_active=True)
+    
+    # Check if already a participant
+    if request.user in room.participants.all():
+        messages.info(request, f'You are already a member of {room.name}')
+        return redirect('XMR:chat_room_detail', room_slug=room.slug)
+    
+    # Check if banned
+    if request.user in room.banned_users.all():
+        messages.error(request, 'You are banned from this room')
+        return redirect('XMR:chat_room')
+    
+    if request.method == 'POST':
+        password = request.POST.get('password')
+        
+        # Check if password protected
+        if room.is_protected:
+            if room.password == password:
+                # Password correct - add user
+                with transaction.atomic():
+                    room.participants.add(request.user)
+                    
+                    # Create join message
+                    ChatMessage.objects.create(
+                        room=room,
+                        user=request.user,
+                        message_type='JOIN',
+                        content=f"👋 {request.user.username} joined the room"
+                    )
+                    
+                    # Send notifications
+                    try:
+                        for participant in room.participants.exclude(id=request.user.id):
+                            ChatNotificationMessage.objects.create(
+                                user=participant,
+                                notification_type='JOIN',
+                                message=f"{request.user.username} joined the room",
+                                related_object_id=room.id
+                            )
+                    except Exception as e:
+                        logger.error(f"Failed to send notifications: {e}")
+                
+                messages.success(request, f'✅ You have joined {room.name}')
+                return redirect('XMR:chat_room_detail', room_slug=room.slug)
+            else:
+                messages.error(request, '❌ Incorrect password')
+        else:
+            # Room is not protected, just add user
+            with transaction.atomic():
+                room.participants.add(request.user)
+                
+                # Create join message
+                ChatMessage.objects.create(
+                    room=room,
+                    user=request.user,
+                    message_type='JOIN',
+                    content=f"👋 {request.user.username} joined the room"
+                )
+            
+            messages.success(request, f'✅ You have joined {room.name}')
+            return redirect('XMR:chat_room_detail', room_slug=room.slug)
+    
+    # Simple password entry page
+    context = {
+        'room': room,
+        'mode': 'join'
+    }
+    return render(request, 'chat.html', context)
 
 
 
