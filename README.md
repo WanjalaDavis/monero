@@ -6,6 +6,8 @@ pip install "django>=4.2,<5.0"
  
 Then run the migrations 
 
+934354adc468cb709b1bde681debf4c3a5656fc9
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
