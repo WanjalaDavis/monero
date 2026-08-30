@@ -109,14 +109,14 @@ DATABASES = {
 # DATABASES = {
 #     'default': {
 #         'ENGINE': 'django.db.backends.mysql',
-#         'NAME': 'monero_db',       
-#         'USER': 'root',            
-#         'PASSWORD': '',            
-#         'HOST': '127.0.0.1',       
-#         'PORT': '3306',  
+#         'NAME': 'monero_db',
+#         'USER': 'root',
+#         'PASSWORD': '',
+#         'HOST': '127.0.0.1',
+#         'PORT': '3306',
 #         'OPTIONS': {
-#             'charset': 'utf8mb4',  
-#         },          
+#             'charset': 'utf8mb4',
+#         },
 #     }
 # }
 
@@ -160,6 +160,12 @@ USE_TZ = True
 
 
 STATIC_URL = 'static/'
+
+
+STATICFILES_DIRS = [
+    BASE_DIR / "static"
+]
+
 
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 

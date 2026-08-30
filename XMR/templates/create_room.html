@@ -1,914 +1,943 @@
-<!-- create_room.html -->
 {% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% if current_room %}⚙️ {{ current_room.name }}{% else %}✨ New Room{% endif %} | Monero Chat</title>
-    
-    <!-- Bootstrap 5 + Icons -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
-    
-    <!-- Font Awesome 6 -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- Animate.css -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
-    
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    
-    <!-- AOS -->
-    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
-    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#f26822">
+    <title>{% if current_room %}✨ {{ current_room.name }} • Room Studio{% else %}✨ Create New Room • XMR Chat Studio{% endif %}</title>
+
+    <!-- Preconnect for faster loading -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <!-- Modern Font Stack -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,100..900&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
+
+    <!-- Bootstrap 5.3 Icons & CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+
+    <!-- Font Awesome 6 Pro (using free tier) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <!-- AOS Animation Library -->
+    <link href="https://unpkg.com/aos@2.3.4/dist/aos.css" rel="stylesheet">
+
+    <!-- Chart.js 4.4 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
     <!-- SweetAlert2 -->
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.10.5/dist/sweetalert2.all.min.js"></script>
+
+    <!-- Particles Background (optional, lightweight) -->
+    <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
+
     <style>
-        /* ========== THEME VARIABLES ========== */
+        /* ============================================ */
+        /* 2026 ULTRA-MODERN DESIGN SYSTEM              */
+        /* Glassmorphism • Micro-interactions • 3D      */
+        /* ============================================ */
+
         :root {
-            /* Light Theme (Default) */
-            --primary-100: #ffe6d5;
-            --primary-200: #ffcdab;
-            --primary-300: #ffb482;
-            --primary-400: #ff9b59;
-            --primary-500: #f26822;
-            --primary-600: #d4541c;
-            --primary-700: #b64116;
-            --primary-800: #982e10;
-            --primary-900: #7a1b0a;
-            --primary-rgb: 242, 104, 34;
-            
-            --bg-primary: #ffffff;
-            --bg-secondary: #f8f9fa;
-            --bg-tertiary: #e9ecef;
-            --bg-card: rgba(255, 255, 255, 0.9);
-            --bg-sidebar: #ffffff;
-            
-            --text-primary: #212529;
-            --text-secondary: #495057;
-            --text-muted: #6c757d;
-            --text-inverse: #ffffff;
-            
-            --border-light: #dee2e6;
-            --border-color: #ced4da;
-            
-            --shadow-sm: 0 2px 4px rgba(0,0,0,0.05);
-            --shadow-md: 0 4px 6px rgba(0,0,0,0.07);
-            --shadow-lg: 0 10px 15px rgba(0,0,0,0.1);
-            --shadow-xl: 0 20px 25px rgba(0,0,0,0.15);
-            
+            /* Core Colors - Dynamic with CSS Variables */
+            --primary-hue: 22;
+            --primary-sat: 89%;
+            --primary-light: 52%;
+            --primary: hsl(var(--primary-hue), var(--primary-sat), var(--primary-light));
+            --primary-dark: hsl(var(--primary-hue), var(--primary-sat), 42%);
+            --primary-darker: hsl(var(--primary-hue), var(--primary-sat), 32%);
+            --primary-lightest: hsla(var(--primary-hue), var(--primary-sat), var(--primary-light), 0.12);
+            --primary-glow: hsla(var(--primary-hue), var(--primary-sat), var(--primary-light), 0.4);
+
+            /* Neutrals */
+            --gray-50: #fafafa;
+            --gray-100: #f5f5f5;
+            --gray-200: #e5e5e5;
+            --gray-300: #d4d4d4;
+            --gray-400: #a3a3a3;
+            --gray-500: #737373;
+            --gray-600: #525252;
+            --gray-700: #404040;
+            --gray-800: #262626;
+            --gray-900: #171717;
+
+            /* Semantic Colors */
             --success: #10b981;
+            --success-dark: #059669;
             --danger: #ef4444;
+            --danger-dark: #dc2626;
             --warning: #f59e0b;
+            --warning-dark: #d97706;
             --info: #3b82f6;
-            
-            --sidebar-width: 280px;
-            --header-height: 70px;
-            --border-radius: 16px;
+            --info-dark: #2563eb;
+
+            /* Spacing */
+            --space-xs: 0.25rem;
+            --space-sm: 0.5rem;
+            --space-md: 1rem;
+            --space-lg: 1.5rem;
+            --space-xl: 2rem;
+            --space-2xl: 3rem;
+            --space-3xl: 4rem;
+
+            /* Shadows */
+            --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+            --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+
+            /* Glass Effects */
+            --glass-bg: rgba(255, 255, 255, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.2);
+            --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+
+            /* Animations */
+            --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-bounce: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+            /* Layout */
+            --sidebar-width: 300px;
+            --header-height: 72px;
+            --border-radius-sm: 8px;
+            --border-radius-md: 12px;
+            --border-radius-lg: 20px;
+            --border-radius-xl: 28px;
+            --border-radius-full: 9999px;
         }
 
         /* Dark Theme */
         [data-theme="dark"] {
-            --primary-100: #7a1b0a;
-            --primary-200: #982e10;
-            --primary-300: #b64116;
-            --primary-400: #d4541c;
-            --primary-500: #f26822;
-            --primary-600: #ff9b59;
-            --primary-700: #ffb482;
-            --primary-800: #ffcdab;
-            --primary-900: #ffe6d5;
-            --primary-rgb: 242, 104, 34;
-            
-            --bg-primary: #0a0b0e;
-            --bg-secondary: #141519;
-            --bg-tertiary: #1e1f26;
-            --bg-card: rgba(30, 31, 38, 0.95);
-            --bg-sidebar: #1a1b20;
-            
-            --text-primary: #e4e6eb;
-            --text-secondary: #b0b3b8;
-            --text-muted: #8a8d94;
-            --text-inverse: #212529;
-            
-            --border-light: #2a2b32;
-            --border-color: #3a3b45;
-            
-            --shadow-sm: 0 2px 4px rgba(0,0,0,0.3);
-            --shadow-md: 0 4px 6px rgba(0,0,0,0.4);
-            --shadow-lg: 0 10px 15px rgba(0,0,0,0.5);
-            --shadow-xl: 0 20px 25px rgba(0,0,0,0.6);
+            --gray-50: #0a0a0a;
+            --gray-100: #141414;
+            --gray-200: #1f1f1f;
+            --gray-300: #2a2a2a;
+            --gray-400: #3f3f3f;
+            --gray-500: #5e5e5e;
+            --gray-600: #7a7a7a;
+            --gray-700: #9e9e9e;
+            --gray-800: #c4c4c4;
+            --gray-900: #e5e5e5;
+            --glass-bg: rgba(15, 15, 25, 0.8);
+            --glass-border: rgba(255, 255, 255, 0.05);
+            --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
         }
 
-        /* Monochrome Theme */
-        [data-theme="monochrome"] {
-            --primary-100: #f5f5f5;
-            --primary-200: #e5e5e5;
-            --primary-300: #d4d4d4;
-            --primary-400: #a3a3a3;
-            --primary-500: #737373;
-            --primary-600: #525252;
-            --primary-700: #404040;
-            --primary-800: #262626;
-            --primary-900: #171717;
-            --primary-rgb: 115, 115, 115;
-        }
-
-        /* Ocean Theme */
-        [data-theme="ocean"] {
-            --primary-100: #cffafe;
-            --primary-200: #a5f3fc;
-            --primary-300: #67e8f9;
-            --primary-400: #22d3ee;
-            --primary-500: #06b6d4;
-            --primary-600: #0891b2;
-            --primary-700: #0e7490;
-            --primary-800: #155e75;
-            --primary-900: #164e63;
-            --primary-rgb: 6, 182, 212;
-        }
-
-        /* Forest Theme */
-        [data-theme="forest"] {
-            --primary-100: #dcfce7;
-            --primary-200: #bbf7d0;
-            --primary-300: #86efac;
-            --primary-400: #4ade80;
-            --primary-500: #22c55e;
-            --primary-600: #16a34a;
-            --primary-700: #15803d;
-            --primary-800: #166534;
-            --primary-900: #14532d;
-            --primary-rgb: 34, 197, 94;
-        }
-
-        /* Royal Theme */
-        [data-theme="royal"] {
-            --primary-100: #f3e8ff;
-            --primary-200: #e9d5ff;
-            --primary-300: #d8b4fe;
-            --primary-400: #c084fc;
-            --primary-500: #a855f7;
-            --primary-600: #9333ea;
-            --primary-700: #7e22ce;
-            --primary-800: #6b21a5;
-            --primary-900: #581c87;
-            --primary-rgb: 168, 85, 247;
-        }
-
-        /* Dark theme overrides for color themes */
-        [data-theme="dark"][data-theme="ocean"] {
-            --primary-100: #164e63;
-            --primary-200: #155e75;
-            --primary-300: #0e7490;
-            --primary-400: #0891b2;
-            --primary-500: #06b6d4;
-            --primary-600: #22d3ee;
-            --primary-700: #67e8f9;
-            --primary-800: #a5f3fc;
-            --primary-900: #cffafe;
-        }
-
-        [data-theme="dark"][data-theme="forest"] {
-            --primary-100: #14532d;
-            --primary-200: #166534;
-            --primary-300: #15803d;
-            --primary-400: #16a34a;
-            --primary-500: #22c55e;
-            --primary-600: #4ade80;
-            --primary-700: #86efac;
-            --primary-800: #bbf7d0;
-            --primary-900: #dcfce7;
-        }
-
-        [data-theme="dark"][data-theme="royal"] {
-            --primary-100: #581c87;
-            --primary-200: #6b21a5;
-            --primary-300: #7e22ce;
-            --primary-400: #9333ea;
-            --primary-500: #a855f7;
-            --primary-600: #c084fc;
-            --primary-700: #d8b4fe;
-            --primary-800: #e9d5ff;
-            --primary-900: #f3e8ff;
-        }
-
-        [data-theme="dark"][data-theme="monochrome"] {
-            --bg-primary: #171717;
-            --bg-secondary: #262626;
-            --bg-tertiary: #404040;
-            --bg-card: rgba(38, 38, 38, 0.95);
-            --bg-sidebar: #1f1f1f;
-            --text-primary: #f5f5f5;
-            --text-secondary: #e5e5e5;
-            --text-muted: #a3a3a3;
-            --border-light: #404040;
-            --border-color: #525252;
-        }
-
-        /* ========== BASE STYLES ========== */
+        /* Reset & Base */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
         }
 
         body {
             font-family: 'Inter', sans-serif;
-            background-color: var(--bg-secondary);
-            color: var(--text-primary);
-            line-height: 1.6;
+            background: linear-gradient(135deg, var(--gray-100) 0%, var(--gray-200) 100%);
+            color: var(--gray-800);
+            line-height: 1.5;
             min-height: 100vh;
-            transition: background-color 0.3s ease, color 0.3s ease;
             overflow-x: hidden;
+            position: relative;
         }
 
-        /* ========== LAYOUT ========== */
-        .app-wrapper {
+        /* Animated Background Particles */
+        #particles-js {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+            opacity: 0.4;
+        }
+
+        /* Layout */
+        .app {
+            position: relative;
+            z-index: 1;
             display: flex;
             min-height: 100vh;
         }
 
-        /* Sidebar */
+        /* Sidebar - Glass Morphism */
         .sidebar {
             width: var(--sidebar-width);
-            background: var(--bg-sidebar);
-            border-right: 1px solid var(--border-light);
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-right: 1px solid var(--glass-border);
             position: fixed;
             height: 100vh;
             overflow-y: auto;
-            transition: transform 0.3s ease;
-            z-index: 1000;
-            box-shadow: var(--shadow-lg);
+            transition: transform var(--transition-base);
+            z-index: 100;
+            box-shadow: var(--glass-shadow);
         }
 
+        .sidebar::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .sidebar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .sidebar::-webkit-scrollbar-thumb {
+            background: var(--primary);
+            border-radius: var(--border-radius-full);
+        }
+
+        /* Sidebar Header with 3D Effect */
         .sidebar-header {
-            padding: 1.5rem;
-            border-bottom: 1px solid var(--border-light);
+            padding: var(--space-xl) var(--space-lg);
+            border-bottom: 1px solid var(--glass-border);
+            position: relative;
+            overflow: hidden;
         }
 
-        .sidebar-header h3 {
-            font-family: 'Space Grotesk', sans-serif;
-            font-weight: 700;
-            color: var(--primary-500);
-            margin: 0;
-            font-size: 1.5rem;
+        .sidebar-header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, var(--primary-glow) 0%, transparent 70%);
+            opacity: 0.1;
+            animation: rotate 20s linear infinite;
         }
 
-        .sidebar-header small {
-            color: var(--text-muted);
-            font-size: 0.875rem;
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
         }
 
-        .sidebar-nav {
-            padding: 1rem 0;
+        .logo {
+            font-family: 'Space Grotesk', monospace;
+            font-size: 1.75rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            margin-bottom: var(--space-xs);
+            letter-spacing: -0.02em;
         }
 
+        .logo-badge {
+            font-size: 0.75rem;
+            padding: var(--space-xs) var(--space-sm);
+            background: var(--primary-lightest);
+            border-radius: var(--border-radius-full);
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        /* Navigation */
         .nav-section {
-            margin-bottom: 1.5rem;
+            margin-bottom: var(--space-xl);
         }
 
         .nav-section-title {
-            padding: 0.5rem 1.5rem;
-            font-size: 0.75rem;
+            padding: 0 var(--space-lg);
+            font-size: 0.7rem;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: var(--text-muted);
-            font-weight: 600;
+            letter-spacing: 1.5px;
+            font-weight: 700;
+            color: var(--gray-500);
+            margin-bottom: var(--space-sm);
         }
 
         .nav-item {
             display: flex;
             align-items: center;
-            padding: 0.75rem 1.5rem;
-            color: var(--text-secondary);
+            gap: var(--space-md);
+            padding: var(--space-sm) var(--space-lg);
+            margin: var(--space-xs) var(--space-sm);
+            border-radius: var(--border-radius-md);
+            color: var(--gray-600);
             text-decoration: none;
-            transition: all 0.2s ease;
+            transition: all var(--transition-fast);
             position: relative;
-            margin: 0.25rem 0.75rem;
-            border-radius: var(--border-radius);
+            overflow: hidden;
+        }
+
+        .nav-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            width: 3px;
+            background: var(--primary);
+            transform: scaleY(0);
+            transition: transform var(--transition-fast);
+        }
+
+        .nav-item:hover::before,
+        .nav-item.active::before {
+            transform: scaleY(1);
         }
 
         .nav-item:hover {
-            background: var(--bg-tertiary);
-            color: var(--primary-500);
-            transform: translateX(5px);
+            background: rgba(var(--primary-rgb), 0.08);
+            color: var(--primary);
+            transform: translateX(4px);
         }
 
         .nav-item.active {
-            background: var(--primary-500);
-            color: white;
-            box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);
+            background: linear-gradient(135deg, var(--primary-lightest), transparent);
+            color: var(--primary);
+            font-weight: 600;
         }
 
         .nav-item i {
             width: 24px;
-            font-size: 1.25rem;
-            margin-right: 12px;
+            font-size: 1.2rem;
         }
 
-        .nav-item .badge {
+        .nav-badge {
             margin-left: auto;
-            background: var(--bg-tertiary);
-            color: var(--text-secondary);
-            font-size: 0.75rem;
-            padding: 0.25rem 0.5rem;
-            border-radius: 20px;
+            background: var(--primary-lightest);
+            color: var(--primary);
+            padding: 2px 8px;
+            border-radius: var(--border-radius-full);
+            font-size: 0.7rem;
+            font-weight: 600;
         }
 
-        .nav-item.active .badge {
-            background: rgba(255,255,255,0.2);
-            color: white;
-        }
-
-        /* Main Content */
+        /* Main Content Area */
         .main-content {
             flex: 1;
             margin-left: var(--sidebar-width);
-            padding: 2rem;
-            transition: margin-left 0.3s ease;
+            padding: var(--space-xl);
+            min-height: 100vh;
         }
 
-        /* Top Bar */
+        /* Glass Top Bar */
         .top-bar {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border-radius: var(--border-radius-xl);
+            padding: var(--space-md) var(--space-xl);
+            margin-bottom: var(--space-xl);
+            border: 1px solid var(--glass-border);
             display: flex;
-            align-items: center;
             justify-content: space-between;
-            margin-bottom: 2rem;
-            padding: 1rem;
-            background: var(--bg-card);
-            backdrop-filter: blur(10px);
-            border-radius: var(--border-radius);
-            border: 1px solid var(--border-light);
+            align-items: center;
+            flex-wrap: wrap;
+            gap: var(--space-md);
             box-shadow: var(--shadow-sm);
         }
 
         .page-title {
             font-size: 1.5rem;
             font-weight: 700;
+            background: linear-gradient(135deg, var(--gray-800), var(--gray-600));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
             margin: 0;
-            font-family: 'Space Grotesk', sans-serif;
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
         }
 
         .page-title i {
-            color: var(--primary-500);
-            margin-right: 0.5rem;
+            background: var(--primary);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            font-size: 1.75rem;
         }
 
+        /* Theme Controls */
         .theme-controls {
             display: flex;
-            gap: 0.5rem;
+            gap: var(--space-sm);
             align-items: center;
         }
 
         .theme-btn {
             width: 40px;
             height: 40px;
-            border-radius: 50%;
-            border: 2px solid var(--border-light);
-            background: var(--bg-primary);
-            color: var(--text-primary);
+            border-radius: var(--border-radius-full);
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            color: var(--gray-600);
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all var(--transition-fast);
         }
 
         .theme-btn:hover {
-            border-color: var(--primary-500);
-            color: var(--primary-500);
-            transform: scale(1.1);
-        }
-
-        .theme-btn.active {
-            background: var(--primary-500);
-            border-color: var(--primary-500);
-            color: white;
+            transform: scale(1.05);
+            border-color: var(--primary);
+            color: var(--primary);
         }
 
         .color-palette {
             display: flex;
-            gap: 0.5rem;
-            margin-left: 0.5rem;
+            gap: var(--space-sm);
+            margin-left: var(--space-sm);
+            padding-left: var(--space-sm);
+            border-left: 1px solid var(--glass-border);
         }
 
         .color-dot {
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            border-radius: var(--border-radius-full);
             cursor: pointer;
-            border: 2px solid var(--border-light);
-            transition: all 0.2s ease;
+            transition: all var(--transition-bounce);
+            border: 2px solid transparent;
+            box-shadow: var(--shadow-sm);
         }
 
         .color-dot:hover {
-            transform: scale(1.2);
-            border-color: var(--primary-500);
+            transform: scale(1.15);
+            box-shadow: var(--shadow-md);
         }
 
         .color-dot.active {
-            border-color: var(--primary-500);
-            box-shadow: 0 0 0 2px var(--primary-200);
+            border-color: white;
+            box-shadow: 0 0 0 2px var(--primary);
+            transform: scale(1.1);
         }
 
-        /* ========== CARDS ========== */
-        .card {
-            background: var(--bg-card);
-            backdrop-filter: blur(10px);
-            border: 1px solid var(--border-light);
-            border-radius: var(--border-radius);
-            box-shadow: var(--shadow-md);
-            transition: all 0.3s ease;
-            margin-bottom: 1.5rem;
+        /* Glass Cards */
+        .glass-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--border-radius-xl);
+            transition: all var(--transition-base);
+            overflow: hidden;
         }
 
-        .card:hover {
-            box-shadow: var(--shadow-lg);
-            transform: translateY(-2px);
+        .glass-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-xl);
+            border-color: var(--primary-glow);
         }
 
-        .card-header {
+        .card-header-custom {
+            padding: var(--space-lg) var(--space-xl);
+            border-bottom: 1px solid var(--glass-border);
             background: transparent;
-            border-bottom: 1px solid var(--border-light);
-            padding: 1.25rem 1.5rem;
-            font-weight: 600;
         }
 
-        .card-header h5 {
+        .card-header-custom h5 {
             margin: 0;
-            color: var(--primary-500);
+            font-weight: 700;
             font-size: 1.1rem;
+            color: var(--gray-700);
         }
 
-        .card-body {
-            padding: 1.5rem;
+        .card-body-custom {
+            padding: var(--space-xl);
         }
 
-        /* ========== STATS CARDS ========== */
+        /* Stats Grid with 3D Hover */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: var(--space-lg);
+            margin-bottom: var(--space-xl);
         }
 
-        .stat-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border-light);
-            border-radius: var(--border-radius);
-            padding: 1.5rem;
-            transition: all 0.3s ease;
+        .stat-card-3d {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--border-radius-xl);
+            padding: var(--space-xl);
+            position: relative;
+            overflow: hidden;
+            transition: all var(--transition-base);
+            cursor: pointer;
+        }
+
+        .stat-card-3d::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary), var(--primary-dark));
+            transform: scaleX(0);
+            transition: transform var(--transition-base);
+        }
+
+        .stat-card-3d:hover::before {
+            transform: scaleX(1);
+        }
+
+        .stat-card-3d:hover {
+            transform: translateY(-8px) scale(1.02);
+            box-shadow: var(--shadow-2xl);
+        }
+
+        .stat-icon-wrapper {
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, var(--primary-lightest), transparent);
+            border-radius: var(--border-radius-lg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: var(--space-lg);
+        }
+
+        .stat-icon-wrapper i {
+            font-size: 28px;
+            color: var(--primary);
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+            color: var(--gray-500);
+            margin-bottom: var(--space-xs);
+        }
+
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 800;
+            font-family: 'Space Grotesk', monospace;
+            background: linear-gradient(135deg, var(--gray-800), var(--gray-600));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            line-height: 1;
+        }
+
+        /* Form Elements - Modern */
+        .form-group {
+            margin-bottom: var(--space-lg);
+        }
+
+        .form-label-modern {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--gray-600);
+            margin-bottom: var(--space-sm);
+            display: block;
+            letter-spacing: 0.3px;
+        }
+
+        .input-modern {
+            width: 100%;
+            padding: var(--space-md) var(--space-lg);
+            background: var(--glass-bg);
+            border: 2px solid var(--glass-border);
+            border-radius: var(--border-radius-lg);
+            color: var(--gray-700);
+            font-size: 0.95rem;
+            transition: all var(--transition-fast);
+        }
+
+        .input-modern:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px var(--primary-glow);
+        }
+
+        textarea.input-modern {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        .character-counter {
+            font-size: 0.7rem;
+            color: var(--gray-500);
+            margin-top: var(--space-xs);
+            text-align: right;
+        }
+
+        /* Template Cards - Interactive */
+        .template-grid-modern {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: var(--space-lg);
+        }
+
+        .template-card-modern {
+            background: var(--glass-bg);
+            backdrop-filter: blur(10px);
+            border: 2px solid var(--glass-border);
+            border-radius: var(--border-radius-lg);
+            padding: var(--space-xl);
+            text-align: center;
+            cursor: pointer;
+            transition: all var(--transition-bounce);
+            position: relative;
+        }
+
+        .template-card-modern:hover {
+            transform: translateY(-8px);
+            border-color: var(--primary);
+            box-shadow: var(--shadow-xl);
+        }
+
+        .template-card-modern.selected {
+            border-color: var(--primary);
+            background: linear-gradient(135deg, var(--primary-lightest), transparent);
+        }
+
+        .template-card-modern.selected::after {
+            content: '✓';
+            position: absolute;
+            top: var(--space-md);
+            right: var(--space-md);
+            width: 28px;
+            height: 28px;
+            background: var(--primary);
+            color: white;
+            border-radius: var(--border-radius-full);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: bold;
+            animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        @keyframes popIn {
+            from {
+                transform: scale(0);
+                opacity: 0;
+            }
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .template-icon-modern {
+            width: 64px;
+            height: 64px;
+            background: linear-gradient(135deg, var(--primary-lightest), transparent);
+            border-radius: var(--border-radius-lg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto var(--space-lg);
+        }
+
+        .template-icon-modern i {
+            font-size: 32px;
+            color: var(--primary);
+        }
+
+        /* Feature Toggles */
+        .feature-grid-modern {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: var(--space-md);
+        }
+
+        .feature-toggle-modern {
+            background: var(--glass-bg);
+            border: 2px solid var(--glass-border);
+            border-radius: var(--border-radius-lg);
+            padding: var(--space-md);
+            display: flex;
+            align-items: center;
+            gap: var(--space-md);
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+
+        .feature-toggle-modern:hover {
+            transform: translateX(4px);
+            border-color: var(--primary);
+        }
+
+        .feature-toggle-modern.selected {
+            background: linear-gradient(135deg, var(--primary-lightest), transparent);
+            border-color: var(--primary);
+        }
+
+        .feature-icon-modern {
+            width: 44px;
+            height: 44px;
+            background: var(--primary-lightest);
+            border-radius: var(--border-radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .feature-icon-modern i {
+            font-size: 20px;
+            color: var(--primary);
+        }
+
+        /* Buttons - Modern 3D */
+        .btn-modern {
+            padding: var(--space-md) var(--space-xl);
+            border-radius: var(--border-radius-lg);
+            font-weight: 600;
+            font-size: 0.95rem;
+            border: none;
+            cursor: pointer;
+            transition: all var(--transition-base);
             position: relative;
             overflow: hidden;
         }
 
-        .stat-card::before {
+        .btn-modern::after {
             content: '';
             position: absolute;
-            top: 0;
-            right: 0;
-            width: 100px;
-            height: 100px;
-            background: radial-gradient(circle, var(--primary-500) 0%, transparent 70%);
-            opacity: 0.1;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
             border-radius: 50%;
-            transform: translate(30px, -30px);
+            background: rgba(255, 255, 255, 0.3);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
         }
 
-        .stat-card:hover {
-            transform: translateY(-4px);
-            box-shadow: var(--shadow-lg);
-            border-color: var(--primary-500);
+        .btn-modern:active::after {
+            width: 300px;
+            height: 300px;
         }
 
-        .stat-icon {
-            width: 48px;
-            height: 48px;
-            background: var(--bg-tertiary);
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 1rem;
+        .btn-primary-modern {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            box-shadow: 0 4px 15px var(--primary-glow);
         }
 
-        .stat-icon i {
-            font-size: 24px;
-            color: var(--primary-500);
+        .btn-primary-modern:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px var(--primary-glow);
         }
 
-        .stat-label {
-            color: var(--text-muted);
-            font-size: 0.875rem;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+        .btn-outline-modern {
+            background: transparent;
+            border: 2px solid var(--primary);
+            color: var(--primary);
         }
 
-        .stat-value {
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--text-primary);
-            font-family: 'Space Grotesk', sans-serif;
+        .btn-outline-modern:hover {
+            background: var(--primary);
+            color: white;
+            transform: translateY(-2px);
         }
 
-        /* ========== SCROLLABLE CONTAINERS ========== */
-        .scrollable-container {
-            max-height: 400px;
-            overflow-y: auto;
-            padding-right: 0.5rem;
+        .btn-danger-modern {
+            background: linear-gradient(135deg, var(--danger), var(--danger-dark));
+            color: white;
         }
 
-        .scrollable-container::-webkit-scrollbar {
-            width: 6px;
+        .btn-success-modern {
+            background: linear-gradient(135deg, var(--success), var(--success-dark));
+            color: white;
         }
 
-        .scrollable-container::-webkit-scrollbar-track {
-            background: var(--bg-tertiary);
-            border-radius: 3px;
+        .btn-warning-modern {
+            background: linear-gradient(135deg, var(--warning), var(--warning-dark));
+            color: white;
         }
 
-        .scrollable-container::-webkit-scrollbar-thumb {
-            background: var(--primary-500);
-            border-radius: 3px;
-        }
-
-        .scrollable-container::-webkit-scrollbar-thumb:hover {
-            background: var(--primary-600);
-        }
-
-        /* Timeline for Recent Activity */
-        .timeline {
+        /* Timeline */
+        .timeline-modern {
             position: relative;
-            padding-left: 2rem;
+            padding-left: var(--space-xl);
         }
 
-        .timeline::before {
+        .timeline-modern::before {
             content: '';
             position: absolute;
             left: 0;
             top: 0;
             bottom: 0;
             width: 2px;
-            background: linear-gradient(to bottom, var(--primary-500), transparent);
+            background: linear-gradient(to bottom, var(--primary), transparent);
         }
 
-        .timeline-item {
+        .timeline-item-modern {
             position: relative;
-            padding-bottom: 1.5rem;
+            padding-bottom: var(--space-lg);
         }
 
-        .timeline-item::before {
+        .timeline-item-modern::before {
             content: '';
             position: absolute;
-            left: -2rem;
-            top: 0.25rem;
+            left: calc(-1 * var(--space-xl) + 4px);
+            top: 4px;
             width: 12px;
             height: 12px;
-            border-radius: 50%;
-            background: var(--primary-500);
-            border: 2px solid var(--bg-card);
-            box-shadow: 0 0 0 2px var(--primary-200);
+            border-radius: var(--border-radius-full);
+            background: var(--primary);
+            border: 2px solid var(--glass-bg);
+            box-shadow: 0 0 0 2px var(--primary-glow);
         }
 
         .timeline-time {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            margin-bottom: 0.25rem;
+            font-size: 0.7rem;
+            color: var(--gray-500);
+            margin-bottom: var(--space-xs);
         }
 
         .timeline-content {
-            background: var(--bg-tertiary);
-            border-radius: 12px;
-            padding: 1rem;
-            border: 1px solid var(--border-light);
+            background: var(--glass-bg);
+            border-radius: var(--border-radius-lg);
+            padding: var(--space-md);
+            border: 1px solid var(--glass-border);
         }
 
-        /* ========== FORMS ========== */
-        .form-control, .form-select {
-            background: var(--bg-primary);
-            border: 1px solid var(--border-light);
-            border-radius: 12px;
-            color: var(--text-primary);
-            padding: 0.75rem 1rem;
-            transition: all 0.2s ease;
+        /* User List Items */
+        .user-item-modern {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--border-radius-lg);
+            padding: var(--space-md);
+            margin-bottom: var(--space-sm);
+            transition: all var(--transition-fast);
         }
 
-        .form-control:focus, .form-select:focus {
-            border-color: var(--primary-500);
-            box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1);
-            background: var(--bg-primary);
-            color: var(--text-primary);
+        .user-item-modern:hover {
+            transform: translateX(4px);
+            border-color: var(--primary);
         }
 
-        .form-label {
-            font-weight: 500;
-            color: var(--text-secondary);
-            margin-bottom: 0.5rem;
-            font-size: 0.875rem;
-        }
-
-        /* ========== BUTTONS ========== */
-        .btn {
-            padding: 0.75rem 1.5rem;
-            border-radius: 12px;
-            font-weight: 500;
-            transition: all 0.2s ease;
-            border: none;
-        }
-
-        .btn-primary {
-            background: var(--primary-500);
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: var(--primary-600);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);
-        }
-
-        .btn-outline-primary {
-            background: transparent;
-            border: 2px solid var(--primary-500);
-            color: var(--primary-500);
-        }
-
-        .btn-outline-primary:hover {
-            background: var(--primary-500);
-            color: white;
-            transform: translateY(-2px);
-        }
-
-        .btn-danger {
-            background: var(--danger);
-            color: white;
-        }
-
-        .btn-danger:hover {
-            background: #dc2626;
-            transform: translateY(-2px);
-        }
-
-        .btn-success {
-            background: var(--success);
-            color: white;
-        }
-
-        .btn-success:hover {
-            background: #059669;
-            transform: translateY(-2px);
-        }
-
-        /* ========== BADGES ========== */
-        .badge {
-            padding: 0.35rem 0.75rem;
-            border-radius: 20px;
-            font-weight: 500;
-            font-size: 0.75rem;
-        }
-
-        .badge-room {
-            background: var(--primary-100);
-            color: var(--primary-700);
-        }
-
-        .badge-online {
-            background: rgba(16, 185, 129, 0.1);
-            color: var(--success);
-        }
-
-        .badge-mod {
-            background: rgba(59, 130, 246, 0.1);
-            color: var(--info);
-        }
-
-        .badge-creator {
-            background: rgba(245, 158, 11, 0.1);
-            color: var(--warning);
-        }
-
-        /* ========== TEMPLATE CARDS ========== */
-        .template-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-        }
-
-        .template-card {
-            background: var(--bg-tertiary);
-            border: 2px solid transparent;
-            border-radius: var(--border-radius);
-            padding: 1.5rem;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-align: center;
-            position: relative;
-        }
-
-        .template-card:hover {
-            border-color: var(--primary-500);
-            transform: translateY(-4px);
-            box-shadow: var(--shadow-lg);
-        }
-
-        .template-card.selected {
-            border-color: var(--primary-500);
-            background: var(--primary-100);
-        }
-
-        .template-card.selected::after {
-            content: '✓';
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            width: 24px;
-            height: 24px;
-            background: var(--primary-500);
-            color: white;
+        /* Loading Spinner */
+        .spinner-modern {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--glass-border);
+            border-top-color: var(--primary);
             border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
+            animation: spin 0.6s linear infinite;
+            display: inline-block;
         }
 
-        .template-icon {
-            width: 48px;
-            height: 48px;
-            background: var(--bg-primary);
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 1rem;
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
 
-        .template-icon i {
-            font-size: 24px;
-            color: var(--primary-500);
-        }
-
-        /* ========== FEATURE TOGGLES ========== */
-        .feature-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 1rem;
-        }
-
-        .feature-toggle {
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-light);
-            border-radius: 12px;
-            padding: 1rem;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            position: relative;
-        }
-
-        .feature-toggle:hover {
-            border-color: var(--primary-500);
-            transform: translateY(-2px);
-        }
-
-        .feature-toggle.selected {
-            background: var(--primary-100);
-            border-color: var(--primary-500);
-        }
-
-        .feature-icon {
-            width: 40px;
-            height: 40px;
-            background: var(--bg-primary);
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-        }
-
-        .feature-icon i {
-            font-size: 20px;
-            color: var(--primary-500);
-        }
-
-        /* ========== LIST GROUP ========== */
-        .list-group {
-            border-radius: var(--border-radius);
-            overflow: hidden;
-        }
-
-        .list-group-item {
-            background: var(--bg-tertiary);
-            border-color: var(--border-light);
-            color: var(--text-primary);
-            padding: 1rem;
-        }
-
-        .list-group-item-action:hover {
-            background: var(--primary-100);
-            color: var(--primary-700);
-        }
-
-        /* ========== DROPDOWNS ========== */
-        .dropdown-menu {
-            background: var(--bg-card);
-            backdrop-filter: blur(10px);
-            border: 1px solid var(--border-light);
-            border-radius: 12px;
-            box-shadow: var(--shadow-lg);
-        }
-
-        .dropdown-item {
-            color: var(--text-primary);
-            padding: 0.5rem 1rem;
-        }
-
-        .dropdown-item:hover {
-            background: var(--primary-100);
-            color: var(--primary-700);
-        }
-
-        /* ========== ALERTS ========== */
-        .alert {
+        /* Alerts */
+        .alert-modern {
             border: none;
-            border-radius: var(--border-radius);
-            padding: 1rem 1.5rem;
-            margin-bottom: 1rem;
+            border-radius: var(--border-radius-lg);
+            padding: var(--space-md) var(--space-lg);
+            margin-bottom: var(--space-lg);
+            backdrop-filter: blur(10px);
+            animation: slideDown 0.3s ease;
         }
 
-        .alert-success {
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .alert-success-modern {
             background: rgba(16, 185, 129, 0.1);
-            color: var(--success);
             border-left: 4px solid var(--success);
+            color: var(--success);
         }
 
-        .alert-danger {
+        .alert-danger-modern {
             background: rgba(239, 68, 68, 0.1);
-            color: var(--danger);
             border-left: 4px solid var(--danger);
+            color: var(--danger);
         }
 
-        .alert-warning {
-            background: rgba(245, 158, 11, 0.1);
-            color: var(--warning);
-            border-left: 4px solid var(--warning);
-        }
-
-        .alert-info {
-            background: rgba(59, 130, 246, 0.1);
-            color: var(--info);
-            border-left: 4px solid var(--info);
-        }
-
-        /* ========== EMPTY STATES ========== */
-        .empty-state {
+        /* Empty State */
+        .empty-state-modern {
             text-align: center;
-            padding: 3rem;
+            padding: var(--space-3xl);
         }
 
-        .empty-icon {
+        .empty-icon-modern {
             font-size: 4rem;
-            color: var(--text-muted);
-            opacity: 0.3;
-            margin-bottom: 1rem;
+            color: var(--gray-400);
+            margin-bottom: var(--space-lg);
+            animation: float 3s ease-in-out infinite;
         }
 
-        .empty-title {
-            font-size: 1.25rem;
-            font-weight: 600;
-            margin-bottom: 0.5rem;
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
         }
 
-        .empty-text {
-            color: var(--text-muted);
+        /* Scrollable Containers */
+        .scrollable-container {
+            max-height: 400px;
+            overflow-y: auto;
+            padding-right: var(--space-sm);
         }
 
-        /* ========== RESPONSIVE ========== */
+        .scrollable-container::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .scrollable-container::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .scrollable-container::-webkit-scrollbar-thumb {
+            background: var(--primary);
+            border-radius: var(--border-radius-full);
+        }
+
+        /* Mobile Responsive */
         @media (max-width: 992px) {
             .sidebar {
                 transform: translateX(-100%);
             }
-            
+
             .sidebar.show {
                 transform: translateX(0);
             }
-            
+
             .main-content {
                 margin-left: 0;
             }
-            
-            .menu-toggle {
-                display: block;
+
+            .menu-toggle-mobile {
+                display: flex;
+                position: fixed;
+                bottom: var(--space-lg);
+                right: var(--space-lg);
+                width: 56px;
+                height: 56px;
+                border-radius: var(--border-radius-full);
+                background: var(--primary);
+                color: white;
+                border: none;
+                box-shadow: var(--shadow-xl);
+                z-index: 1000;
+                cursor: pointer;
+                align-items: center;
+                justify-content: center;
+                font-size: 1.5rem;
+                transition: all var(--transition-base);
+            }
+
+            .menu-toggle-mobile:hover {
+                transform: scale(1.1);
             }
         }
 
@@ -916,159 +945,232 @@
             .stats-grid {
                 grid-template-columns: 1fr;
             }
-            
-            .template-grid {
+
+            .template-grid-modern {
                 grid-template-columns: 1fr;
             }
-            
-            .feature-grid {
+
+            .feature-grid-modern {
                 grid-template-columns: 1fr;
             }
-            
+
             .top-bar {
                 flex-direction: column;
-                gap: 1rem;
                 align-items: flex-start;
             }
-            
+
             .theme-controls {
                 width: 100%;
                 justify-content: flex-start;
                 flex-wrap: wrap;
             }
-        }
 
-        /* Menu Toggle Button */
-        .menu-toggle {
-            display: none;
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background: var(--primary-500);
-            color: white;
-            border: none;
-            box-shadow: var(--shadow-lg);
-            z-index: 1001;
-            cursor: pointer;
-        }
-
-        .menu-toggle:hover {
-            transform: scale(1.1);
-        }
-
-        /* Loading States */
-        .loading {
-            position: relative;
-            pointer-events: none;
-            opacity: 0.7;
-        }
-
-        .loading::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 20px;
-            height: 20px;
-            margin: -10px 0 0 -10px;
-            border: 2px solid var(--border-light);
-            border-top-color: var(--primary-500);
-            border-radius: 50%;
-            animation: spin 0.6s linear infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
+            .main-content {
+                padding: var(--space-md);
+            }
         }
 
         /* Animations */
-        @keyframes slideIn {
+        @keyframes fadeInUp {
             from {
                 opacity: 0;
-                transform: translateX(-20px);
+                transform: translateY(30px);
             }
             to {
                 opacity: 1;
-                transform: translateX(0);
+                transform: translateY(0);
             }
         }
 
-        .animate-slide-in {
-            animation: slideIn 0.3s ease forwards;
+        .animate-fade-up {
+            animation: fadeInUp 0.6s ease forwards;
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: -1000px 0;
+            }
+            100% {
+                background-position: 1000px 0;
+            }
+        }
+
+        .loading-shimmer {
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+            background-size: 1000px 100%;
+            animation: shimmer 2s infinite;
         }
 
         /* Chart Containers */
         .chart-container {
             position: relative;
-            height: 300px;
+            height: 320px;
             width: 100%;
+        }
+
+        /* Tooltips */
+        [data-tooltip] {
+            position: relative;
+            cursor: pointer;
+        }
+
+        [data-tooltip]:before {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: var(--space-xs) var(--space-sm);
+            background: var(--gray-800);
+            color: white;
+            font-size: 0.7rem;
+            border-radius: var(--border-radius-sm);
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity var(--transition-fast);
+            z-index: 1000;
+        }
+
+        [data-tooltip]:hover:before {
+            opacity: 1;
+        }
+
+        /* Sidebar room item styling */
+        .sidebar-room-item {
+            display: flex;
+            align-items: center;
+            gap: var(--space-md);
+            padding: var(--space-sm) var(--space-lg);
+            margin: var(--space-xs) var(--space-sm);
+            border-radius: var(--border-radius-md);
+            color: var(--gray-600);
+            text-decoration: none;
+            transition: all var(--transition-fast);
+            position: relative;
+        }
+
+        .sidebar-room-item:hover {
+            background: rgba(var(--primary-rgb), 0.08);
+            color: var(--primary);
+            transform: translateX(4px);
+        }
+
+        .sidebar-room-item.active {
+            background: linear-gradient(135deg, var(--primary-lightest), transparent);
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        .sidebar-room-item i {
+            width: 24px;
+            font-size: 1rem;
+        }
+
+        .room-badge {
+            margin-left: auto;
+            background: var(--primary-lightest);
+            color: var(--primary);
+            padding: 2px 6px;
+            border-radius: var(--border-radius-full);
+            font-size: 0.65rem;
+            font-weight: 600;
+        }
+
+        .room-section {
+            max-height: 350px;
+            overflow-y: auto;
+            padding-right: var(--space-sm);
+        }
+
+        /* Additional styles for banned tab */
+        .ban-reason-badge {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            padding: 4px 8px;
+            border-radius: var(--border-radius-sm);
+            font-size: 0.75rem;
+        }
+
+        /* Chart responsive */
+        canvas {
+            max-height: 300px;
+            width: 100% !important;
         }
     </style>
 </head>
-<body data-theme="light" data-color="monero">
-    <!-- Mobile Menu Toggle -->
-    <button class="menu-toggle" onclick="toggleSidebar()">
-        <i class="fas fa-bars"></i>
-    </button>
+<body data-theme="light">
+    <div id="particles-js"></div>
 
-    <div class="app-wrapper">
+    <div class="app">
+        <!-- Mobile Menu Toggle -->
+        <button class="menu-toggle-mobile" onclick="toggleSidebar()">
+            <i class="fas fa-bars"></i>
+        </button>
+
         <!-- Sidebar -->
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <h3>XMR Chat</h3>
-                <small>Room Management</small>
+                <div class="logo">
+                    XMR<span style="color: var(--primary);">Chat</span>
+                </div>
+                <div class="logo-badge">Studio v3.0</div>
             </div>
-            
+
             <nav class="sidebar-nav">
-                {% if current_room %}
-                <!-- Management Navigation -->
+                <!-- New: Admin Dashboard Link -->
                 <div class="nav-section">
-                    <div class="nav-section-title">Management</div>
-                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=overview" 
+                    <div class="nav-section-title">Admin</div>
+                    <a href="{% url 'XMR:myadmin' %}" class="nav-item">
+                        <i class="fas fa-tachometer-alt"></i>
+                        <span>Admin Dashboard</span>
+                    </a>
+                </div>
+
+                {% if current_room %}
+                <div class="nav-section">
+                    <div class="nav-section-title">Room Studio</div>
+                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=overview"
                        class="nav-item {% if tab == 'overview' %}active{% endif %}">
                         <i class="fas fa-chart-pie"></i>
-                        <span>Overview</span>
+                        <span>Analytics Hub</span>
                     </a>
-                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=users" 
+                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=users"
                        class="nav-item {% if tab == 'users' %}active{% endif %}">
                         <i class="fas fa-users"></i>
-                        <span>Users</span>
-                        <span class="badge">{{ participants|length }}</span>
+                        <span>Community</span>
+                        <span class="nav-badge">{{ participants|length }}</span>
                     </a>
-                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=banned" 
+                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=banned"
                        class="nav-item {% if tab == 'banned' %}active{% endif %}">
-                        <i class="fas fa-ban"></i>
-                        <span>Banned</span>
-                        <span class="badge">{{ banned_users|length }}</span>
+                        <i class="fas fa-gavel"></i>
+                        <span>Restricted</span>
+                        <span class="nav-badge">{{ banned_users|length }}</span>
                     </a>
-                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=settings" 
+                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=settings"
                        class="nav-item {% if tab == 'settings' %}active{% endif %}">
-                        <i class="fas fa-cog"></i>
-                        <span>Settings</span>
+                        <i class="fas fa-sliders-h"></i>
+                        <span>Configuration</span>
                     </a>
-                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=analytics" 
+                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=analytics"
                        class="nav-item {% if tab == 'analytics' %}active{% endif %}">
                         <i class="fas fa-chart-line"></i>
-                        <span>Analytics</span>
+                        <span>Insights</span>
                     </a>
-                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=automation" 
+                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=automation"
                        class="nav-item {% if tab == 'automation' %}active{% endif %}">
                         <i class="fas fa-robot"></i>
                         <span>Automation</span>
                     </a>
-                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=danger" 
+                    <a href="{% url 'XMR:create_chat_room' %}?room={{ current_room.slug }}&tab=danger"
                        class="nav-item {% if tab == 'danger' %}active{% endif %}">
-                        <i class="fas fa-exclamation-triangle"></i>
+                        <i class="fas fa-skull-crossbones"></i>
                         <span>Danger Zone</span>
                     </a>
                 </div>
                 {% else %}
-                <!-- Creation Navigation -->
                 <div class="nav-section">
-                    <div class="nav-section-title">Create Room</div>
+                    <div class="nav-section-title">Create</div>
                     <a href="{% url 'XMR:create_chat_room' %}" class="nav-item active">
                         <i class="fas fa-plus-circle"></i>
                         <span>New Room</span>
@@ -1076,9 +1178,32 @@
                 </div>
                 {% endif %}
 
-                <!-- Quick Links -->
+                <!-- Rooms List Section (moved from main content) -->
                 <div class="nav-section">
-                    <div class="nav-section-title">Quick Links</div>
+                    <div class="nav-section-title">
+                        <i class="fas fa-door-open me-1"></i> Your Rooms
+                    </div>
+                    <div class="room-section">
+                        {% if admin_rooms %}
+                            {% for room in admin_rooms %}
+                                <a href="{% url 'XMR:create_chat_room' %}?room={{ room.slug }}"
+                                   class="sidebar-room-item {% if current_room and current_room.slug == room.slug %}active{% endif %}">
+                                    <i class="fas fa-hashtag"></i>
+                                    <span>{{ room.name|truncatechars:20 }}</span>
+                                    <span class="room-badge">{{ room.participant_count }}</span>
+                                </a>
+                            {% endfor %}
+                        {% else %}
+                            <div class="text-center py-3" style="color: var(--gray-500);">
+                                <i class="fas fa-door-closed mb-2 d-block"></i>
+                                <small>No rooms yet</small>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">Navigation</div>
                     <a href="{% url 'XMR:chat_room' %}" class="nav-item">
                         <i class="fas fa-comments"></i>
                         <span>All Rooms</span>
@@ -1088,7 +1213,7 @@
                         <span>Investments</span>
                     </a>
                     <a href="{% url 'XMR:account' %}" class="nav-item">
-                        <i class="fas fa-user"></i>
+                        <i class="fas fa-user-circle"></i>
                         <span>Dashboard</span>
                     </a>
                 </div>
@@ -1098,29 +1223,26 @@
         <!-- Main Content -->
         <main class="main-content">
             <!-- Top Bar -->
-            <div class="top-bar">
-                <h1 class="page-title">
-                    <i class="fas {% if current_room %}fa-cog{% else %}fa-plus-circle{% endif %}"></i>
+            <div class="top-bar animate-fade-up">
+                <div class="page-title">
+                    <i class="fas {% if current_room %}fa-cog fa-spin{% else %}fa-plus-circle{% endif %}"></i>
                     {% if current_room %}
                         {{ current_room.name }}
                     {% else %}
                         Create New Room
                     {% endif %}
-                </h1>
+                </div>
 
                 <div class="theme-controls">
-                    <!-- Dark/Light Toggle -->
-                    <button class="theme-btn" onclick="toggleTheme()" id="themeToggle" title="Toggle Dark/Light">
+                    <button class="theme-btn" onclick="toggleTheme()" id="themeToggle" data-tooltip="Toggle Theme">
                         <i class="fas fa-moon"></i>
                     </button>
-
-                    <!-- Color Palette -->
                     <div class="color-palette">
-                        <div class="color-dot" style="background: #f26822;" onclick="setColor('monero')" title="Monero Orange"></div>
-                        <div class="color-dot" style="background: #06b6d4;" onclick="setColor('ocean')" title="Ocean Blue"></div>
-                        <div class="color-dot" style="background: #22c55e;" onclick="setColor('forest')" title="Forest Green"></div>
-                        <div class="color-dot" style="background: #a855f7;" onclick="setColor('royal')" title="Royal Purple"></div>
-                        <div class="color-dot" style="background: #737373;" onclick="setColor('monochrome')" title="Monochrome"></div>
+                        <div class="color-dot" style="background: #f26822;" onclick="setColor('monero', this)" data-tooltip="Monero Orange"></div>
+                        <div class="color-dot" style="background: #06b6d4;" onclick="setColor('ocean', this)" data-tooltip="Ocean Blue"></div>
+                        <div class="color-dot" style="background: #22c55e;" onclick="setColor('forest', this)" data-tooltip="Forest Green"></div>
+                        <div class="color-dot" style="background: #a855f7;" onclick="setColor('royal', this)" data-tooltip="Royal Purple"></div>
+                        <div class="color-dot" style="background: #737373;" onclick="setColor('monochrome', this)" data-tooltip="Monochrome"></div>
                     </div>
                 </div>
             </div>
@@ -1128,87 +1250,78 @@
             <!-- Messages -->
             {% if messages %}
                 {% for message in messages %}
-                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                        <i class="fas fa-{% if message.tags == 'success' %}check-circle{% elif message.tags == 'error' %}exclamation-circle{% else %}info-circle{% endif %} me-2"></i>
+                    <div class="alert-modern alert-{{ message.tags }}-modern animate-fade-up">
+                        <i class="fas fa-{% if message.tags == 'success' %}check-circle{% elif message.tags == 'error' %}exclamation-triangle{% else %}info-circle{% endif %} me-2"></i>
                         {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        <button type="button" class="btn-close float-end" data-bs-dismiss="alert" aria-label="Close" style="filter: invert(1);"></button>
                     </div>
                 {% endfor %}
             {% endif %}
 
             <!-- CREATION MODE -->
             {% if not current_room %}
-                <!-- Stats Grid -->
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-icon"><i class="fas fa-door-open"></i></div>
-                        <div class="stat-label">Your Rooms</div>
-                        <div class="stat-value">{{ admin_rooms|length }}</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon"><i class="fas fa-users"></i></div>
-                        <div class="stat-label">Total Participants</div>
-                        <div class="stat-value">{{ stats.total_participants|default:"0" }}</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon"><i class="fas fa-comment"></i></div>
-                        <div class="stat-label">Messages Today</div>
-                        <div class="stat-value">{{ stats.messages_today|default:"0" }}</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon"><i class="fas fa-circle"></i></div>
-                        <div class="stat-label">Online Now</div>
-                        <div class="stat-value">{{ stats.users_online|default:"0" }}</div>
-                    </div>
-                </div>
 
-                <div class="row">
+                <div class="row g-4">
                     <div class="col-lg-8">
-                        <!-- Creation Form -->
-                        <div class="card">
-                            <div class="card-header">
-                                <h5 class="mb-0"><i class="fas fa-magic me-2"></i>Room Configuration</h5>
+                        <!-- Main Creation Form -->
+                        <div class="glass-card animate-fade-up" style="animation-delay: 0.2s;">
+                            <div class="card-header-custom">
+                                <h5><i class="fas fa-magic me-2"></i>Room Configuration Studio</h5>
                             </div>
-                            <div class="card-body">
+                            <div class="card-body-custom">
                                 <form method="POST" action="{% url 'XMR:create_chat_room' %}" id="roomCreationForm">
                                     {% csrf_token %}
                                     <input type="hidden" name="form_action" value="create_room">
 
                                     <!-- Basic Info -->
-                                    <div class="mb-4">
-                                        <h6 class="text-primary mb-3">Basic Information</h6>
-                                        <div class="row g-3">
-                                            <div class="col-md-6">
-                                                <label class="form-label">Room Name <span class="text-danger">*</span></label>
-                                                <input type="text" class="form-control" name="name" id="roomName" 
-                                                       required placeholder="e.g., Monero Traders" maxlength="50" oninput="updateCounter(this, 'roomNameCounter')">
-                                                <small class="text-muted"><span id="roomNameCounter">0</span>/50</small>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label class="form-label">Room Type</label>
-                                                <select class="form-select" name="room_type">
-                                                    {% for type in room_types %}
-                                                        <option value="{{ type.0 }}">{{ type.1 }}</option>
-                                                    {% endfor %}
-                                                </select>
-                                            </div>
-                                            <div class="col-12">
-                                                <label class="form-label">Description</label>
-                                                <textarea class="form-control" name="description" id="roomDescription" rows="3" 
-                                                          placeholder="What's this room about?" oninput="updateCounter(this, 'descCounter')"></textarea>
-                                                <small class="text-muted"><span id="descCounter">0</span>/500</small>
-                                            </div>
+                                    <div class="form-group">
+                                        <label class="form-label-modern">
+                                            <i class="fas fa-tag me-1"></i>Room Name
+                                            <span class="text-danger">*</span>
+                                        </label>
+                                        <input type="text" class="input-modern" name="name" id="roomName"
+                                               required placeholder="e.g., Crypto Traders Hub" maxlength="50"
+                                               oninput="updateCounter(this, 'roomNameCounter')">
+                                        <div class="character-counter">
+                                            <span id="roomNameCounter">0</span>/50 characters
                                         </div>
                                     </div>
 
-                                    <!-- Templates -->
-                                    <div class="mb-4">
-                                        <h6 class="text-primary mb-3">Quick Templates</h6>
-                                        <div class="template-grid">
+                                    <div class="form-group">
+                                        <label class="form-label-modern">
+                                            <i class="fas fa-layer-group me-1"></i>Room Type
+                                        </label>
+                                        <select class="input-modern" name="room_type" style="cursor: pointer;">
+                                            {% for type in room_types %}
+                                                <option value="{{ type.0 }}">{{ type.1 }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label class="form-label-modern">
+                                            <i class="fas fa-align-left me-1"></i>Description
+                                        </label>
+                                        <textarea class="input-modern" name="description" id="roomDescription" rows="3"
+                                                  placeholder="What's this room about? Describe the purpose and guidelines..."
+                                                  oninput="updateCounter(this, 'descCounter')"></textarea>
+                                        <div class="character-counter">
+                                            <span id="descCounter">0</span>/500 characters
+                                        </div>
+                                    </div>
+
+                                    <!-- Templates Section -->
+                                    <div class="form-group">
+                                        <label class="form-label-modern">
+                                            <i class="fas fa-copy me-1"></i>Quick Templates
+                                        </label>
+                                        <div class="template-grid-modern">
                                             {% for template in room_templates %}
-                                                <div class="template-card" onclick="selectTemplate(this, '{{ template.id }}')">
-                                                    <div class="template-icon"><i class="fas {{ template.icon }}"></i></div>
-                                                    <h6>{{ template.name }}</h6>
+                                                <div class="template-card-modern" onclick="selectTemplate(this, '{{ template.id }}')">
+                                                    <div class="template-icon-modern">
+                                                        <i class="fas {{ template.icon }}"></i>
+                                                    </div>
+                                                    <h6 class="mb-1">{{ template.name }}</h6>
                                                     <small class="text-muted">{{ template.description }}</small>
                                                     <input type="radio" name="template" value="{{ template.id }}" style="display: none;">
                                                 </div>
@@ -1216,66 +1329,66 @@
                                         </div>
                                     </div>
 
-                                    <!-- Advanced Settings -->
-                                    <div class="mb-4">
-                                        <h6 class="text-primary mb-3">
-                                            Advanced Settings
-                                            <button class="btn btn-sm btn-outline-primary ms-2" type="button" 
-                                                    onclick="toggleAdvanced(this)">
-                                                <i class="fas fa-chevron-down"></i>
-                                            </button>
-                                        </h6>
-                                        <div id="advancedSettings" style="display: none;">
-                                            <div class="border p-3 rounded">
-                                                <div class="row g-3">
-                                                    <div class="col-md-6">
-                                                        <label class="form-label">Max Participants</label>
-                                                        <select class="form-select" name="max_participants">
-                                                            {% for num in max_options %}
-                                                                <option value="{{ num }}" {% if num == 100 %}selected{% endif %}>{{ num }}</option>
-                                                            {% endfor %}
-                                                        </select>
-                                                    </div>
-                                                    <div class="col-md-6">
-                                                        <div class="form-check form-switch mt-4">
-                                                            <input class="form-check-input" type="checkbox" name="is_protected" id="isProtected">
-                                                            <label class="form-check-label" for="isProtected">Password Protected</label>
-                                                        </div>
-                                                    </div>
-                                                    <div class="col-12" id="passwordField" style="display: none;">
-                                                        <label class="form-label">Password</label>
-                                                        <div class="input-group">
-                                                            <input type="text" class="form-control" name="password" id="roomPassword">
-                                                            <button class="btn btn-outline-primary" type="button" onclick="generatePassword()">
-                                                                <i class="fas fa-random"></i>
-                                                            </button>
-                                                        </div>
-                                                    </div>
+                                    <!-- Advanced Settings Toggle -->
+                                    <div class="form-group">
+                                        <button type="button" class="btn-outline-modern btn-modern w-100" onclick="toggleAdvanced()">
+                                            <i class="fas fa-cog me-2"></i>Advanced Configuration
+                                            <i class="fas fa-chevron-down ms-2" id="advancedIcon"></i>
+                                        </button>
+                                    </div>
+
+                                    <div id="advancedSettings" style="display: none;">
+                                        <div class="form-group">
+                                            <label class="form-label-modern">
+                                                <i class="fas fa-users-slash me-1"></i>Max Participants
+                                            </label>
+                                            <select class="input-modern" name="max_participants">
+                                                {% for num in max_options %}
+                                                    <option value="{{ num }}" {% if num == 100 %}selected{% endif %}>{{ num }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label class="form-label-modern d-flex align-items-center">
+                                                <input type="checkbox" name="is_protected" id="isProtected" style="margin-right: 8px;">
+                                                <i class="fas fa-lock me-1"></i>Password Protected
+                                            </label>
+                                            <div id="passwordField" style="display: none;">
+                                                <div class="input-group">
+                                                    <input type="text" class="input-modern" name="password" id="roomPassword" placeholder="Auto-generated password">
+                                                    <button class="btn-outline-modern btn-modern" type="button" onclick="generatePassword()" style="border-radius: var(--border-radius-lg); margin-left: 8px;">
+                                                        <i class="fas fa-random"></i>
+                                                    </button>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
 
                                     <!-- Features -->
-                                    <div class="mb-4">
-                                        <h6 class="text-primary mb-3">Room Features</h6>
-                                        <div class="feature-grid">
+                                    <div class="form-group">
+                                        <label class="form-label-modern">
+                                            <i class="fas fa-star-of-life me-1"></i>Room Features
+                                        </label>
+                                        <div class="feature-grid-modern">
                                             {% for feature in features %}
-                                                <div class="feature-toggle" onclick="toggleFeature(this, '{{ feature.id }}')">
-                                                    <div class="feature-icon"><i class="fas {{ feature.icon }}"></i></div>
-                                                    <div>
-                                                        <div>{{ feature.name }}</div>
-                                                        <small class="text-muted">Click to enable</small>
+                                                <div class="feature-toggle-modern" onclick="toggleFeature(this, '{{ feature.id }}')">
+                                                    <div class="feature-icon-modern">
+                                                        <i class="fas {{ feature.icon }}"></i>
                                                     </div>
-                                                    <input type="checkbox" name="features" value="{{ feature.id }}" 
+                                                    <div>
+                                                        <div class="fw-semibold">{{ feature.name }}</div>
+                                                        <small class="text-muted">Enable feature</small>
+                                                    </div>
+                                                    <input type="checkbox" name="features" value="{{ feature.id }}"
                                                            id="feature_{{ feature.id }}" style="display: none;">
                                                 </div>
                                             {% endfor %}
                                         </div>
                                     </div>
 
-                                    <button type="submit" class="btn btn-primary w-100">
-                                        <i class="fas fa-check-circle me-2"></i>Create Room
+                                    <button type="submit" class="btn-primary-modern btn-modern w-100" id="submitBtn">
+                                        <i class="fas fa-rocket me-2"></i>Launch Room
                                     </button>
                                 </form>
                             </div>
@@ -1283,37 +1396,31 @@
                     </div>
 
                     <div class="col-lg-4">
-                        <!-- Your Rooms -->
-                        <div class="card">
-                            <div class="card-header">
-                                <h5 class="mb-0"><i class="fas fa-door-open me-2"></i>Your Rooms</h5>
+                        <!-- Quick Stats Card (replaces old rooms list) -->
+                        <div class="glass-card animate-fade-up" style="animation-delay: 0.3s;">
+                            <div class="card-header-custom">
+                                <h5><i class="fas fa-chart-simple me-2"></i>Room Stats</h5>
                             </div>
-                            <div class="card-body p-0">
-                                {% if admin_rooms %}
-                                    <div class="list-group list-group-flush">
-                                        {% for room in admin_rooms %}
-                                            <a href="{% url 'XMR:create_chat_room' %}?room={{ room.slug }}" 
-                                               class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
-                                                <div>
-                                                    <i class="fas fa-door-open me-2" style="color: var(--primary-500);"></i>
-                                                    <strong>{{ room.name }}</strong>
-                                                    <br>
-                                                    <small class="text-muted">
-                                                        <i class="fas fa-users me-1"></i>{{ room.participant_count }}
-                                                        <i class="fas fa-comment ms-2 me-1"></i>{{ room.message_count }}
-                                                    </small>
-                                                </div>
-                                                <span class="badge badge-room">{{ room.room_type }}</span>
-                                            </a>
-                                        {% endfor %}
-                                    </div>
-                                {% else %}
-                                    <div class="empty-state">
-                                        <div class="empty-icon"><i class="fas fa-door-open"></i></div>
-                                        <div class="empty-title">No Rooms Yet</div>
-                                        <div class="empty-text">Create your first room</div>
-                                    </div>
-                                {% endif %}
+                            <div class="card-body-custom">
+                                <div class="text-center mb-3">
+                                    <i class="fas fa-door-open fa-3x" style="color: var(--primary); opacity: 0.7;"></i>
+                                </div>
+                                <div class="d-flex justify-content-between mb-2">
+                                    <span>Total Rooms:</span>
+                                    <strong>{{ admin_rooms|length }}</strong>
+                                </div>
+                                <div class="d-flex justify-content-between mb-2">
+                                    <span>Total Members:</span>
+                                    <strong>{{ total_members|default:"0" }}</strong>
+                                </div>
+                                <div class="d-flex justify-content-between">
+                                    <span>Active Rooms:</span>
+                                    <strong>{{ active_rooms|default:"0" }}</strong>
+                                </div>
+                                <hr class="my-3" style="border-color: var(--glass-border);">
+                                <div class="text-center">
+                                    <small class="text-muted">Your rooms are now in the sidebar for quick access</small>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1322,27 +1429,25 @@
             <!-- MANAGEMENT MODE -->
             {% else %}
                 <!-- Room Header -->
-                <div class="card mb-4">
-                    <div class="card-body">
-                        <div class="d-flex align-items-center">
-                            <div class="flex-shrink-0">
-                                <div class="stat-icon" style="width: 64px; height: 64px;">
-                                    <i class="fas {{ current_room.icon|default:'fa-comments' }} fa-2x"></i>
-                                </div>
+                <div class="glass-card animate-fade-up">
+                    <div class="card-body-custom">
+                        <div class="d-flex align-items-center flex-wrap gap-3">
+                            <div class="stat-icon-wrapper" style="width: 80px; height: 80px;">
+                                <i class="fas {{ current_room.icon|default:'fa-comments' }} fa-3x"></i>
                             </div>
-                            <div class="flex-grow-1 ms-3">
-                                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                            <div class="flex-grow-1">
+                                <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
                                     <h2 class="h3 mb-0">{{ current_room.name }}</h2>
-                                    <span class="badge badge-room">{{ current_room.room_type }}</span>
+                                    <span class="badge" style="background: var(--primary-lightest); color: var(--primary);">{{ current_room.room_type }}</span>
                                     {% if current_room.is_protected %}
-                                        <span class="badge bg-warning"><i class="fas fa-lock me-1"></i>Protected</span>
+                                        <span class="badge" style="background: var(--warning); color: white;"><i class="fas fa-lock me-1"></i>Protected</span>
                                     {% endif %}
                                 </div>
-                                <p class="text-muted mb-2">{{ current_room.description|default:"No description" }}</p>
+                                <p class="text-muted mb-2">{{ current_room.description|default:"No description provided" }}</p>
                                 <div class="d-flex gap-3 flex-wrap">
-                                    <span class="badge badge-online"><i class="fas fa-circle me-1"></i>{{ current_room.online_count|default:"0" }} online</span>
-                                    <span class="badge"><i class="fas fa-users me-1"></i>{{ current_room.participants.count }} total</span>
-                                    <span class="badge"><i class="fas fa-calendar me-1"></i>{{ current_room.created_at|timesince }} ago</span>
+                                    <span><i class="fas fa-circle text-success me-1"></i>{{ current_room.online_count|default:"0" }} online</span>
+                                    <span><i class="fas fa-users me-1"></i>{{ current_room.participants.count }} total</span>
+                                    <span><i class="fas fa-calendar me-1"></i>{{ current_room.created_at|timesince }} ago</span>
                                 </div>
                             </div>
                         </div>
@@ -1350,59 +1455,62 @@
                 </div>
 
                 <!-- Tab Content -->
-                <div class="card">
-                    <div class="card-body">
+                <div class="glass-card animate-fade-up" style="animation-delay: 0.1s;">
+                    <div class="card-body-custom">
                         <!-- OVERVIEW TAB -->
                         {% if tab == 'overview' %}
-                        <div class="row">
+                        <div class="row g-4">
                             <div class="col-md-6">
-                                <h5 class="mb-3">Quick Stats</h5>
+                                <h5 class="mb-3"><i class="fas fa-chart-simple me-2"></i>Quick Stats</h5>
                                 <div class="row g-3">
                                     <div class="col-6">
-                                        <div class="stat-card">
+                                        <div class="stat-card-3d p-3">
                                             <div class="stat-label">Total Messages</div>
-                                            <div class="stat-value">{{ analytics.total_messages|default:"0" }}</div>
+                                            <div class="stat-value" style="font-size: 2rem;">{{ analytics.total_messages|default:"0" }}</div>
                                         </div>
                                     </div>
                                     <div class="col-6">
-                                        <div class="stat-card">
+                                        <div class="stat-card-3d p-3">
                                             <div class="stat-label">Messages Today</div>
-                                            <div class="stat-value">{{ analytics.messages_today|default:"0" }}</div>
+                                            <div class="stat-value" style="font-size: 2rem;">{{ analytics.messages_today|default:"0" }}</div>
                                         </div>
                                     </div>
                                     <div class="col-6">
-                                        <div class="stat-card">
-                                            <div class="stat-label">Active Users (7d)</div>
-                                            <div class="stat-value">{{ analytics.active_users_7d|default:"0" }}</div>
+                                        <div class="stat-card-3d p-3">
+                                            <div class="stat-label">Active (7d)</div>
+                                            <div class="stat-value" style="font-size: 2rem;">{{ analytics.active_users_7d|default:"0" }}</div>
                                         </div>
                                     </div>
                                     <div class="col-6">
-                                        <div class="stat-card">
+                                        <div class="stat-card-3d p-3">
                                             <div class="stat-label">Files Shared</div>
-                                            <div class="stat-value">{{ room_stats.files_shared|default:"0" }}</div>
+                                            <div class="stat-value" style="font-size: 2rem;">{{ room_stats.files_shared|default:"0" }}</div>
                                         </div>
                                     </div>
                                 </div>
 
-                                <h5 class="mb-3 mt-4">Top Posters</h5>
-                                <div class="scrollable-container">
+                                <h5 class="mb-3 mt-4"><i class="fas fa-trophy me-2"></i>Top Contributors</h5>
+                                <div class="scrollable-container" style="max-height: 300px;">
                                     {% for poster in analytics.top_posters %}
-                                        <div class="d-flex justify-content-between align-items-center mb-2 p-2 border-bottom">
+                                        <div class="d-flex justify-content-between align-items-center p-2 border-bottom">
                                             <span><i class="fas fa-user-circle me-2"></i>{{ poster.username }}</span>
-                                            <span class="badge badge-room">{{ poster.msg_count }} msgs</span>
+                                            <span class="badge" style="background: var(--primary-lightest); color: var(--primary);">{{ poster.msg_count }} messages</span>
                                         </div>
                                     {% empty %}
-                                        <div class="text-muted text-center py-3">No messages yet</div>
+                                        <div class="empty-state-modern py-3">
+                                            <i class="fas fa-comment-slash fa-2x mb-2 opacity-50"></i>
+                                            <p class="mb-0">No messages yet</p>
+                                        </div>
                                     {% endfor %}
                                 </div>
                             </div>
 
                             <div class="col-md-6">
-                                <h5 class="mb-3">Recent Activity</h5>
-                                <div class="scrollable-container">
-                                    <div class="timeline">
+                                <h5 class="mb-3"><i class="fas fa-history me-2"></i>Recent Activity</h5>
+                                <div class="scrollable-container" style="max-height: 500px;">
+                                    <div class="timeline-modern">
                                         {% for activity in recent_activity %}
-                                            <div class="timeline-item">
+                                            <div class="timeline-item-modern">
                                                 <div class="timeline-time">{{ activity.created_at|timesince }} ago</div>
                                                 <div class="timeline-content">
                                                     <strong>{{ activity.user.username }}</strong> {{ activity.action|lower }}
@@ -1410,7 +1518,10 @@
                                                 </div>
                                             </div>
                                         {% empty %}
-                                            <div class="text-muted text-center py-3">No recent activity</div>
+                                            <div class="empty-state-modern">
+                                                <i class="fas fa-hourglass fa-2x mb-2 opacity-50"></i>
+                                                <p class="mb-0">No recent activity</p>
+                                            </div>
                                         {% endfor %}
                                     </div>
                                 </div>
@@ -1419,144 +1530,183 @@
 
                         <!-- USERS TAB -->
                         {% elif tab == 'users' %}
-                        <div class="row">
+                        <div class="row g-4">
                             <div class="col-md-6">
-                                <h5 class="mb-3">Add Users</h5>
+                                <h5 class="mb-3"><i class="fas fa-user-plus me-2"></i>Add Members</h5>
                                 <form method="POST">
                                     {% csrf_token %}
                                     <input type="hidden" name="form_action" value="bulk_add_participants">
-                                    
-                                    <div class="mb-3">
-                                        <label class="form-label">Search</label>
-                                        <input type="text" class="form-control" id="userSearch" placeholder="Username..." onkeyup="filterUsers()">
+
+                                    <div class="form-group">
+                                        <label class="form-label-modern">Search Users</label>
+                                        <input type="text" class="input-modern" id="userSearch" placeholder="Username or email..." onkeyup="filterUsers()">
                                     </div>
 
-                                    <div class="mb-3">
-                                        <label class="form-label">Role</label>
-                                        <select class="form-select" name="role">
+                                    <div class="form-group">
+                                        <label class="form-label-modern">Role</label>
+                                        <select class="input-modern" name="role">
                                             <option value="participant">Participant</option>
                                             <option value="moderator">Moderator</option>
                                         </select>
                                     </div>
 
-                                    <div class="mb-3">
-                                        <label class="form-label d-flex justify-content-between">
-                                            <span>Available Users</span>
-                                            <button type="button" class="btn btn-link btn-sm p-0" onclick="selectAllUsers()">Select All</button>
-                                        </label>
-                                        <div class="scrollable-container border rounded p-2">
+                                    <div class="form-group">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <label class="form-label-modern mb-0">Available Users</label>
+                                            <button type="button" class="btn-outline-modern btn-modern btn-sm" onclick="selectAllUsers()">Select All</button>
+                                        </div>
+                                        <div class="scrollable-container" style="max-height: 400px;">
                                             {% for user in available_users %}
-                                                <div class="form-check mb-2 user-item" data-username="{{ user.username|lower }}">
-                                                    <input class="form-check-input" type="checkbox" name="users" value="{{ user.id }}" id="user_{{ user.id }}">
-                                                    <label class="form-check-label" for="user_{{ user.id }}">
-                                                        <strong>{{ user.username }}</strong><br>
-                                                        <small class="text-muted">{{ user.email }}</small>
+                                                <div class="user-item-modern d-flex align-items-center gap-2" data-username="{{ user.username|lower }}">
+                                                    <input type="checkbox" name="users" value="{{ user.id }}" id="user_{{ user.id }}" class="form-check-input">
+                                                    <label for="user_{{ user.id }}" class="flex-grow-1" style="cursor: pointer;">
+                                                        <strong>{{ user.username }}</strong>
+                                                        <br><small class="text-muted">{{ user.email }}</small>
                                                     </label>
                                                 </div>
                                             {% empty %}
-                                                <p class="text-muted text-center py-3">No users available</p>
+                                                <div class="empty-state-modern py-3">
+                                                    <i class="fas fa-user-friends fa-2x mb-2 opacity-50"></i>
+                                                    <p class="mb-0">No users available</p>
+                                                </div>
                                             {% endfor %}
                                         </div>
                                     </div>
 
-                                    <button type="submit" class="btn btn-primary">Add Selected</button>
+                                    <button type="submit" class="btn-primary-modern btn-modern w-100">
+                                        <i class="fas fa-user-plus me-2"></i>Add Selected Users
+                                    </button>
                                 </form>
                             </div>
 
                             <div class="col-md-6">
-                                <h5 class="mb-3">Current Participants ({{ participants|length }})</h5>
+                                <h5 class="mb-3"><i class="fas fa-users me-2"></i>Current Members ({{ participants|length }})</h5>
                                 <form method="POST">
                                     {% csrf_token %}
                                     <input type="hidden" name="form_action" value="bulk_remove_participants">
-                                    
-                                    <div class="scrollable-container border rounded p-2" style="max-height: 400px;">
+
+                                    <div class="scrollable-container" style="max-height: 500px;">
                                         {% for participant in participants %}
-                                            <div class="d-flex justify-content-between align-items-center mb-2 p-2 border-bottom">
-                                                <div>
-                                                    <input class="form-check-input me-2" type="checkbox" name="users" value="{{ participant.id }}" id="part_{{ participant.id }}">
-                                                    <label for="part_{{ participant.id }}">
-                                                        <strong>{{ participant.username }}</strong>
-                                                        {% if participant in moderators %}<span class="badge badge-mod ms-2">MOD</span>{% endif %}
-                                                        {% if participant == current_room.created_by %}<span class="badge badge-creator ms-2">CREATOR</span>{% endif %}
-                                                        {% if participant.is_online %}<span class="badge badge-online ms-2">ONLINE</span>{% endif %}
-                                                    </label>
-                                                </div>
-                                                <div class="dropdown">
-                                                    <button class="btn btn-sm btn-outline-primary" data-bs-toggle="dropdown">
-                                                        <i class="fas fa-ellipsis-v"></i>
-                                                    </button>
-                                                    <ul class="dropdown-menu">
-                                                        {% if participant not in moderators %}
-                                                            <li><a class="dropdown-item" href="#" onclick="makeModerator({{ participant.id }})">
-                                                                <i class="fas fa-crown me-2"></i>Make Moderator</a>
-                                                            </li>
-                                                        {% else %}
-                                                            <li><a class="dropdown-item" href="#" onclick="removeModerator({{ participant.id }})">
-                                                                <i class="fas fa-crown me-2 text-warning"></i>Remove Moderator</a>
-                                                            </li>
-                                                        {% endif %}
-                                                        {% if participant != current_room.created_by %}
-                                                            <li><a class="dropdown-item text-danger" href="#" onclick="banUser({{ participant.id }})">
-                                                                <i class="fas fa-ban me-2"></i>Ban User</a>
-                                                            </li>
-                                                        {% endif %}
-                                                    </ul>
+                                            <div class="user-item-modern">
+                                                <div class="d-flex justify-content-between align-items-start">
+                                                    <div class="flex-grow-1">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox" name="users" value="{{ participant.id }}" id="part_{{ participant.id }}">
+                                                            <label class="form-check-label" for="part_{{ participant.id }}">
+                                                                <strong>{{ participant.username }}</strong>
+                                                                {% if participant in moderators %}
+                                                                    <span class="badge" style="background: var(--info); color: white; margin-left: 8px;">MOD</span>
+                                                                {% endif %}
+                                                                {% if participant == current_room.created_by %}
+                                                                    <span class="badge" style="background: var(--warning); color: white; margin-left: 8px;">CREATOR</span>
+                                                                {% endif %}
+                                                            </label>
+                                                        </div>
+                                                        <small class="text-muted ms-4">
+                                                            {% if participant.is_online %}
+                                                                <i class="fas fa-circle text-success" style="font-size: 8px;"></i> Online
+                                                            {% else %}
+                                                                <i class="fas fa-circle text-muted" style="font-size: 8px;"></i> Offline
+                                                            {% endif %}
+                                                            • {{ participant.message_count|default:0 }} messages
+                                                        </small>
+                                                    </div>
+                                                    <div class="dropdown">
+                                                        <button class="btn btn-sm btn-outline-modern" data-bs-toggle="dropdown" style="padding: 4px 8px;">
+                                                            <i class="fas fa-ellipsis-v"></i>
+                                                        </button>
+                                                        <ul class="dropdown-menu">
+                                                            {% if participant not in moderators and participant != current_room.created_by %}
+                                                                <li><a class="dropdown-item" href="#" onclick="makeModerator({{ participant.id }})">
+                                                                    <i class="fas fa-crown me-2"></i>Make Moderator</a>
+                                                                </li>
+                                                            {% endif %}
+                                                            {% if participant in moderators %}
+                                                                <li><a class="dropdown-item" href="#" onclick="removeModerator({{ participant.id }})">
+                                                                    <i class="fas fa-crown me-2 text-warning"></i>Remove Moderator</a>
+                                                                </li>
+                                                            {% endif %}
+                                                            {% if participant != current_room.created_by %}
+                                                                <li><hr class="dropdown-divider"></li>
+                                                                <li><a class="dropdown-item text-danger" href="#" onclick="banUser({{ participant.id }})">
+                                                                    <i class="fas fa-ban me-2"></i>Ban User</a>
+                                                                </li>
+                                                            {% endif %}
+                                                        </ul>
+                                                    </div>
                                                 </div>
                                             </div>
                                         {% empty %}
-                                            <p class="text-muted text-center py-3">No participants</p>
+                                            <div class="empty-state-modern">
+                                                <i class="fas fa-users-slash fa-2x mb-2 opacity-50"></i>
+                                                <p class="mb-0">No participants yet</p>
+                                            </div>
                                         {% endfor %}
                                     </div>
 
-                                    <button type="submit" class="btn btn-danger mt-3">Remove Selected</button>
+                                    <button type="submit" class="btn-danger-modern btn-modern w-100 mt-3">
+                                        <i class="fas fa-user-minus me-2"></i>Remove Selected
+                                    </button>
                                 </form>
                             </div>
                         </div>
 
                         <!-- BANNED TAB -->
                         {% elif tab == 'banned' %}
-                        <div class="row">
+                        <div class="row g-4">
                             <div class="col-md-6">
-                                <h5 class="mb-3">Ban Users</h5>
+                                <h5 class="mb-3"><i class="fas fa-gavel me-2"></i>Ban Users</h5>
                                 <form method="POST">
                                     {% csrf_token %}
                                     <input type="hidden" name="form_action" value="bulk_ban_users">
-                                    <div class="mb-3">
-                                        <label class="form-label">Reason</label>
-                                        <input type="text" class="form-control" name="reason" placeholder="Violation reason" required>
+                                    <div class="form-group">
+                                        <label class="form-label-modern">Reason for Ban</label>
+                                        <input type="text" class="input-modern" name="reason" placeholder="Violation reason..." required>
                                     </div>
-                                    <div class="mb-3">
-                                        <label class="form-label">Select Users</label>
-                                        <div class="scrollable-container border rounded p-2">
+                                    <div class="form-group">
+                                        <label class="form-label-modern">Select Users to Ban</label>
+                                        <div class="scrollable-container" style="max-height: 400px;">
                                             {% for participant in participants %}
                                                 {% if participant != current_room.created_by %}
-                                                    <div class="form-check mb-2">
-                                                        <input class="form-check-input" type="checkbox" name="users" value="{{ participant.id }}" id="ban_{{ participant.id }}">
-                                                        <label class="form-check-label" for="ban_{{ participant.id }}">{{ participant.username }}</label>
+                                                    <div class="user-item-modern">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox" name="users" value="{{ participant.id }}" id="ban_{{ participant.id }}">
+                                                            <label class="form-check-label" for="ban_{{ participant.id }}">
+                                                                <strong>{{ participant.username }}</strong>
+                                                                <br><small class="text-muted">{{ participant.email }}</small>
+                                                            </label>
+                                                        </div>
                                                     </div>
                                                 {% endif %}
                                             {% endfor %}
                                         </div>
                                     </div>
-                                    <button type="submit" class="btn btn-danger">Ban Selected</button>
+                                    <button type="submit" class="btn-danger-modern btn-modern w-100">
+                                        <i class="fas fa-ban me-2"></i>Ban Selected Users
+                                    </button>
                                 </form>
                             </div>
 
                             <div class="col-md-6">
-                                <h5 class="mb-3">Banned Users ({{ banned_users|length }})</h5>
-                                <div class="scrollable-container border rounded p-2">
+                                <h5 class="mb-3"><i class="fas fa-ban me-2"></i>Banned Members ({{ banned_users|length }})</h5>
+                                <div class="scrollable-container" style="max-height: 500px;">
                                     {% for banned in banned_users %}
-                                        <div class="d-flex justify-content-between align-items-center mb-2 p-2 border-bottom">
-                                            <div>
-                                                <strong>{{ banned.username }}</strong>
-                                                <br><small class="text-danger">Reason: {{ banned.ban_reason|default:"Not specified" }}</small>
+                                        <div class="user-item-modern">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <div>
+                                                    <strong>{{ banned.username }}</strong>
+                                                    <br><small class="text-danger">{{ banned.ban_reason|default:"No reason provided" }}</small>
+                                                </div>
+                                                <button class="btn-success-modern btn-modern btn-sm" onclick="unbanUser({{ banned.id }})">
+                                                    <i class="fas fa-undo me-1"></i>Unban
+                                                </button>
                                             </div>
-                                            <button class="btn btn-sm btn-success" onclick="unbanUser({{ banned.id }})">
-                                                <i class="fas fa-undo"></i>
-                                            </button>
                                         </div>
                                     {% empty %}
-                                        <p class="text-muted text-center py-3">No banned users</p>
+                                        <div class="empty-state-modern">
+                                            <i class="fas fa-check-circle fa-2x mb-2 opacity-50" style="color: var(--success);"></i>
+                                            <p class="mb-0">No banned users</p>
+                                        </div>
                                     {% endfor %}
                                 </div>
                             </div>
@@ -1567,29 +1717,28 @@
                         <form method="POST" enctype="multipart/form-data">
                             {% csrf_token %}
                             <input type="hidden" name="form_action" value="update_settings">
-                            
-                            <div class="row">
+
+                            <div class="row g-4">
                                 <div class="col-md-6">
-                                    <h5 class="mb-3">General</h5>
-                                    <div class="mb-3">
-                                        <label class="form-label">Room Name</label>
-                                        <input type="text" class="form-control" name="name" value="{{ current_room.name }}">
+                                    <div class="form-group">
+                                        <label class="form-label-modern"><i class="fas fa-tag me-1"></i>Room Name</label>
+                                        <input type="text" class="input-modern" name="name" value="{{ current_room.name }}">
                                     </div>
-                                    <div class="mb-3">
-                                        <label class="form-label">Description</label>
-                                        <textarea class="form-control" name="description" rows="3">{{ current_room.description }}</textarea>
+                                    <div class="form-group">
+                                        <label class="form-label-modern"><i class="fas fa-align-left me-1"></i>Description</label>
+                                        <textarea class="input-modern" name="description" rows="3">{{ current_room.description }}</textarea>
                                     </div>
-                                    <div class="mb-3">
-                                        <label class="form-label">Room Type</label>
-                                        <select class="form-select" name="room_type">
+                                    <div class="form-group">
+                                        <label class="form-label-modern"><i class="fas fa-layer-group me-1"></i>Room Type</label>
+                                        <select class="input-modern" name="room_type">
                                             {% for type in room_types %}
                                                 <option value="{{ type.0 }}" {% if current_room.room_type == type.0 %}selected{% endif %}>{{ type.1 }}</option>
                                             {% endfor %}
                                         </select>
                                     </div>
-                                    <div class="mb-3">
-                                        <label class="form-label">Max Participants</label>
-                                        <select class="form-select" name="max_participants">
+                                    <div class="form-group">
+                                        <label class="form-label-modern"><i class="fas fa-users-slash me-1"></i>Max Participants</label>
+                                        <select class="input-modern" name="max_participants">
                                             {% for num in max_options %}
                                                 <option value="{{ num }}" {% if current_room.max_participants == num %}selected{% endif %}>{{ num }}</option>
                                             {% endfor %}
@@ -1598,157 +1747,167 @@
                                 </div>
 
                                 <div class="col-md-6">
-                                    <h5 class="mb-3">Security</h5>
-                                    <div class="mb-3">
-                                        <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox" name="is_protected" id="settingsProtected" 
-                                                   {% if current_room.is_protected %}checked{% endif %}>
-                                            <label class="form-check-label" for="settingsProtected">Password Protected</label>
+                                    <div class="form-group">
+                                        <label class="form-label-modern d-flex align-items-center">
+                                            <input type="checkbox" name="is_protected" id="settingsProtected" {% if current_room.is_protected %}checked{% endif %} style="margin-right: 8px;">
+                                            <i class="fas fa-lock me-1"></i>Password Protected
+                                        </label>
+                                        <div id="settingsPasswordField" style="{% if not current_room.is_protected %}display: none;{% endif %}">
+                                            <div class="input-group">
+                                                <input type="text" class="input-modern" name="password" value="{{ current_room.password|default:'' }}" id="settingsPassword">
+                                                <button class="btn-outline-modern btn-modern" type="button" onclick="generatePasswordForSettings()" style="border-radius: var(--border-radius-lg); margin-left: 8px;">
+                                                    <i class="fas fa-random"></i>
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div class="mb-3" id="settingsPasswordField" style="{% if not current_room.is_protected %}display: none;{% endif %}">
-                                        <label class="form-label">Password</label>
-                                        <div class="input-group">
-                                            <input type="text" class="form-control" name="password" value="{{ current_room.password|default:'' }}">
-                                            <button class="btn btn-outline-primary" type="button" onclick="generatePassword()">
-                                                <i class="fas fa-random"></i>
-                                            </button>
-                                        </div>
+                                    <div class="form-group">
+                                        <label class="form-label-modern"><i class="fas fa-hourglass-half me-1"></i>Slow Mode (seconds)</label>
+                                        <input type="number" class="input-modern" name="slow_mode_delay" value="{{ current_room.slow_mode_delay|default:'0' }}" min="0" max="60">
+                                        <small class="text-muted">Delay between messages (0 = disabled)</small>
                                     </div>
-                                    <div class="mb-3">
-                                        <label class="form-label">Slow Mode (seconds)</label>
-                                        <input type="number" class="form-control" name="slow_mode_delay" 
-                                               value="{{ current_room.slow_mode_delay|default:'0' }}" min="0" max="60">
-                                    </div>
-                                    <div class="mb-3">
-                                        <label class="form-label">Message Retention (days)</label>
-                                        <input type="number" class="form-control" name="message_retention_days" 
-                                               value="{{ current_room.message_retention_days|default:'0' }}" min="0">
+                                    <div class="form-group">
+                                        <label class="form-label-modern"><i class="fas fa-archive me-1"></i>Message Retention (days)</label>
+                                        <input type="number" class="input-modern" name="message_retention_days" value="{{ current_room.message_retention_days|default:'0' }}" min="0">
+                                        <small class="text-muted">0 = keep forever</small>
                                     </div>
                                 </div>
 
-                                <div class="col-12 mt-3">
-                                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                                <div class="col-12">
+                                    <button type="submit" class="btn-primary-modern btn-modern">
+                                        <i class="fas fa-save me-2"></i>Save Changes
+                                    </button>
                                 </div>
                             </div>
                         </form>
 
-                        <!-- ANALYTICS TAB - FIXED STATIC CHARTS -->
+                        <!-- ANALYTICS TAB -->
                         {% elif tab == 'analytics' %}
-                        <div class="row">
-                            <div class="col-md-6">
-                                <h5 class="mb-3">Activity (Last 7 Days)</h5>
-                                <div class="card">
-                                    <div class="card-body">
-                                        <canvas id="activityChart" style="width: 100%; height: 300px;"></canvas>
-                                    </div>
+                        <div class="row g-4">
+                            <div class="col-lg-8">
+                                <div class="chart-container">
+                                    <canvas id="activityChart"></canvas>
                                 </div>
                             </div>
-                            <div class="col-md-6">
-                                <h5 class="mb-3">Message Distribution</h5>
-                                <div class="card">
-                                    <div class="card-body">
-                                        <canvas id="messageTypeChart" style="width: 100%; height: 300px;"></canvas>
-                                    </div>
+                            <div class="col-lg-4">
+                                <div class="chart-container">
+                                    <canvas id="messageTypeChart"></canvas>
                                 </div>
                             </div>
                         </div>
 
                         <!-- AUTOMATION TAB -->
                         {% elif tab == 'automation' %}
-                        <div class="row">
+                        <div class="row g-4">
                             <div class="col-md-6">
-                                <h5 class="mb-3">Auto-Responses</h5>
-                                <form method="POST">
+                                <h5 class="mb-3"><i class="fas fa-robot me-2"></i>Auto-Responses</h5>
+                                <form method="POST" class="mb-4">
                                     {% csrf_token %}
                                     <input type="hidden" name="form_action" value="set_auto_responses">
-                                    <div class="mb-3">
-                                        <label class="form-label">Trigger Word</label>
+                                    <div class="form-group">
+                                        <label class="form-label-modern">Trigger Word</label>
                                         <div class="input-group">
-                                            <span class="input-group-text">!</span>
-                                            <input type="text" class="form-control" name="trigger" placeholder="hello" required>
+                                            <span class="input-group-text" style="background: var(--glass-bg); border-color: var(--glass-border);">!</span>
+                                            <input type="text" class="input-modern" name="trigger" placeholder="hello" required style="border-top-left-radius: 0; border-bottom-left-radius: 0;">
                                         </div>
                                     </div>
-                                    <div class="mb-3">
-                                        <label class="form-label">Response</label>
-                                        <textarea class="form-control" name="response" rows="2" placeholder="Bot's response..." required></textarea>
+                                    <div class="form-group">
+                                        <label class="form-label-modern">Response</label>
+                                        <textarea class="input-modern" name="response" rows="2" placeholder="Bot's automatic response..." required></textarea>
                                     </div>
-                                    <button type="submit" class="btn btn-primary">Add Rule</button>
+                                    <button type="submit" class="btn-primary-modern btn-modern">
+                                        <i class="fas fa-plus-circle me-2"></i>Add Rule
+                                    </button>
                                 </form>
 
-                                <h5 class="mb-3 mt-4">Current Rules</h5>
-                                <div class="scrollable-container border rounded p-2">
+                                <h5 class="mb-3">Active Rules</h5>
+                                <div class="scrollable-container" style="max-height: 300px;">
                                     {% for rule in auto_responses %}
-                                        <div class="d-flex justify-content-between align-items-center mb-2 p-2 border-bottom">
-                                            <div>
-                                                <span class="badge badge-room">!{{ rule.trigger }}</span>
-                                                <span class="ms-2">{{ rule.response|truncatechars:50 }}</span>
+                                        <div class="user-item-modern">
+                                            <div class="d-flex justify-content-between align-items-start">
+                                                <div class="flex-grow-1">
+                                                    <span class="badge" style="background: var(--primary-lightest); color: var(--primary);">!{{ rule.trigger }}</span>
+                                                    <p class="mt-2 mb-0 small">{{ rule.response|truncatechars:80 }}</p>
+                                                </div>
+                                                <button class="btn-danger-modern btn-modern btn-sm" onclick="deleteRule({{ rule.id }})">
+                                                    <i class="fas fa-trash-alt"></i>
+                                                </button>
                                             </div>
-                                            <button class="btn btn-sm btn-danger" onclick="deleteRule({{ rule.id }})">
-                                                <i class="fas fa-trash"></i>
-                                            </button>
                                         </div>
                                     {% empty %}
-                                        <p class="text-muted text-center py-3">No rules configured</p>
+                                        <div class="empty-state-modern">
+                                            <i class="fas fa-robot fa-2x mb-2 opacity-50"></i>
+                                            <p class="mb-0">No auto-response rules configured</p>
+                                        </div>
                                     {% endfor %}
                                 </div>
                             </div>
 
                             <div class="col-md-6">
-                                <h5 class="mb-3">Scheduled Events</h5>
-                                <form method="POST">
+                                <h5 class="mb-3"><i class="fas fa-calendar-alt me-2"></i>Scheduled Events</h5>
+                                <form method="POST" class="mb-4">
                                     {% csrf_token %}
                                     <input type="hidden" name="form_action" value="schedule_event">
-                                    <div class="mb-3">
-                                        <label class="form-label">Event Name</label>
-                                        <input type="text" class="form-control" name="event_name" required>
+                                    <div class="form-group">
+                                        <label class="form-label-modern">Event Name</label>
+                                        <input type="text" class="input-modern" name="event_name" required>
                                     </div>
-                                    <div class="mb-3">
-                                        <label class="form-label">Description</label>
-                                        <textarea class="form-control" name="event_description" rows="2"></textarea>
+                                    <div class="form-group">
+                                        <label class="form-label-modern">Description</label>
+                                        <textarea class="input-modern" name="event_description" rows="2"></textarea>
                                     </div>
-                                    <div class="mb-3">
-                                        <label class="form-label">Date & Time</label>
-                                        <input type="datetime-local" class="form-control" name="scheduled_time" required>
+                                    <div class="form-group">
+                                        <label class="form-label-modern">Date & Time</label>
+                                        <input type="datetime-local" class="input-modern" name="scheduled_time" required>
                                     </div>
-                                    <button type="submit" class="btn btn-primary">Schedule Event</button>
+                                    <button type="submit" class="btn-primary-modern btn-modern">
+                                        <i class="fas fa-calendar-plus me-2"></i>Schedule Event
+                                    </button>
                                 </form>
 
-                                <h5 class="mb-3 mt-4">Upcoming Events</h5>
-                                <div class="scrollable-container border rounded p-2">
+                                <h5 class="mb-3">Upcoming Events</h5>
+                                <div class="scrollable-container" style="max-height: 300px;">
                                     {% for event in scheduled_events %}
-                                        <div class="mb-2 p-2 border-bottom">
-                                            <div class="d-flex justify-content-between">
-                                                <strong>{{ event.name }}</strong>
-                                                <small class="text-muted">{{ event.scheduled_time|date:"M d, H:i" }}</small>
+                                        <div class="user-item-modern">
+                                            <div class="d-flex justify-content-between align-items-start">
+                                                <div>
+                                                    <strong>{{ event.name }}</strong>
+                                                    <br><small class="text-muted">{{ event.scheduled_time|date:"M d, Y · H:i" }}</small>
+                                                    {% if event.description %}
+                                                        <br><small>{{ event.description|truncatechars:60 }}</small>
+                                                    {% endif %}
+                                                </div>
+                                                <span class="badge" style="background: var(--warning); color: white;">Upcoming</span>
                                             </div>
-                                            <small class="text-muted">{{ event.description }}</small>
                                         </div>
                                     {% empty %}
-                                        <p class="text-muted text-center py-3">No scheduled events</p>
+                                        <div class="empty-state-modern">
+                                            <i class="fas fa-calendar-times fa-2x mb-2 opacity-50"></i>
+                                            <p class="mb-0">No scheduled events</p>
+                                        </div>
                                     {% endfor %}
                                 </div>
                             </div>
                         </div>
 
-                        <!-- DANGER TAB -->
+                        <!-- DANGER ZONE TAB -->
                         {% elif tab == 'danger' %}
-                        <div class="alert alert-danger">
+                        <div class="alert-modern alert-danger-modern">
                             <i class="fas fa-exclamation-triangle me-2"></i>
-                            Actions here are irreversible. Please proceed with caution.
+                            Actions in this section are irreversible. Please proceed with extreme caution.
                         </div>
 
-                        <div class="card border-danger">
-                            <div class="card-header bg-danger text-white">
-                                <h5 class="mb-0"><i class="fas fa-skull-crossbones me-2"></i>Danger Zone</h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="mb-4">
-                                    <h6 class="text-danger">Transfer Ownership</h6>
-                                    <p class="text-muted">Transfer this room to another user. This cannot be undone.</p>
-                                    <div class="row">
-                                        <div class="col-md-6">
-                                            <select class="form-select mb-2" id="newOwner">
+                        <div class="row g-4">
+                            <div class="col-md-6">
+                                <div class="glass-card">
+                                    <div class="card-header-custom" style="background: linear-gradient(135deg, var(--warning), var(--warning-dark)) !important; color: white;">
+                                        <h5 class="mb-0"><i class="fas fa-exchange-alt me-2"></i>Transfer Ownership</h5>
+                                    </div>
+                                    <div class="card-body-custom">
+                                        <p>Transfer this room to another user. You will lose admin privileges.</p>
+                                        <div class="form-group">
+                                            <label class="form-label-modern">New Owner</label>
+                                            <select class="input-modern" id="newOwner">
                                                 <option value="">Select new owner...</option>
                                                 {% for participant in participants %}
                                                     {% if participant != current_room.created_by %}
@@ -1757,36 +1916,46 @@
                                                 {% endfor %}
                                             </select>
                                         </div>
-                                        <div class="col-md-6">
-                                            <button class="btn btn-warning" onclick="transferOwnership()">
-                                                <i class="fas fa-exchange-alt me-2"></i>Transfer
-                                            </button>
-                                        </div>
+                                        <button class="btn-warning-modern btn-modern w-100" onclick="transferOwnership()">
+                                            <i class="fas fa-exchange-alt me-2"></i>Transfer Room
+                                        </button>
                                     </div>
                                 </div>
+                            </div>
 
-                                <div class="mb-4">
-                                    <h6 class="text-danger">Archive Room</h6>
-                                    <p class="text-muted">Archive this room and make it read-only.</p>
-                                    <button class="btn btn-warning" onclick="archiveRoom()">
-                                        <i class="fas fa-archive me-2"></i>Archive Room
-                                    </button>
-                                </div>
-
-                                <div>
-                                    <h6 class="text-danger">Delete Room</h6>
-                                    <p class="text-muted">Permanently delete this room and all messages.</p>
-                                    <form method="POST" onsubmit="return confirmDelete()">
-                                        {% csrf_token %}
-                                        <input type="hidden" name="form_action" value="delete_room">
-                                        <div class="mb-3">
-                                            <label class="form-label">Type <strong class="text-danger">{{ current_room.name }}</strong> to confirm:</label>
-                                            <input type="text" class="form-control" name="confirm_name" required>
-                                        </div>
-                                        <button type="submit" class="btn btn-danger">
-                                            <i class="fas fa-trash-alt me-2"></i>Delete Permanently
+                            <div class="col-md-6">
+                                <div class="glass-card">
+                                    <div class="card-header-custom" style="background: linear-gradient(135deg, var(--warning), var(--warning-dark)) !important; color: white;">
+                                        <h5 class="mb-0"><i class="fas fa-archive me-2"></i>Archive Room</h5>
+                                    </div>
+                                    <div class="card-body-custom">
+                                        <p>Archive this room. It will become read-only and can be restored later.</p>
+                                        <button class="btn-warning-modern btn-modern w-100" onclick="archiveRoom()">
+                                            <i class="fas fa-archive me-2"></i>Archive Room
                                         </button>
-                                    </form>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <div class="glass-card border-danger">
+                                    <div class="card-header-custom" style="background: linear-gradient(135deg, var(--danger), var(--danger-dark)) !important; color: white;">
+                                        <h5 class="mb-0"><i class="fas fa-skull-crossbones me-2"></i>Permanent Deletion</h5>
+                                    </div>
+                                    <div class="card-body-custom">
+                                        <p class="text-danger fw-bold">⚠️ This action cannot be undone. All messages and data will be permanently deleted.</p>
+                                        <form method="POST" onsubmit="return confirmDelete()">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="form_action" value="delete_room">
+                                            <div class="form-group">
+                                                <label class="form-label-modern">Type <strong class="text-danger">{{ current_room.name }}</strong> to confirm:</label>
+                                                <input type="text" class="input-modern" name="confirm_name" required placeholder="Enter room name to confirm">
+                                            </div>
+                                            <button type="submit" class="btn-danger-modern btn-modern w-100">
+                                                <i class="fas fa-trash-alt me-2"></i>Delete Permanently
+                                            </button>
+                                        </form>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1798,31 +1967,45 @@
     </div>
 
     <script>
-        // ========== THEME MANAGEMENT ==========
+        // ============================================
+        // ULTIMATE 2026 DASHBOARD SCRIPT - FULL FEATURES
+        // ============================================
+
+        // Theme Management
         function toggleTheme() {
             const body = document.body;
             const currentTheme = body.getAttribute('data-theme');
             const newTheme = currentTheme === 'light' ? 'dark' : 'light';
             body.setAttribute('data-theme', newTheme);
             localStorage.setItem('theme', newTheme);
-            
-            // Update icon
+
             const icon = document.querySelector('#themeToggle i');
             icon.className = newTheme === 'light' ? 'fas fa-moon' : 'fas fa-sun';
-            
-            // Update chart colors if charts exist
+
             updateChartColors();
         }
 
-        function setColor(color) {
+        function setColor(color, element) {
             document.body.setAttribute('data-color', color);
             localStorage.setItem('color', color);
-            
-            // Update active dot
+
             document.querySelectorAll('.color-dot').forEach(dot => dot.classList.remove('active'));
-            event.currentTarget.classList.add('active');
-            
-            // Update chart colors
+            element.classList.add('active');
+
+            // Update CSS variable for primary color
+            const colorMap = {
+                'monero': '22, 89%, 52%',
+                'ocean': '192, 86%, 45%',
+                'forest': '142, 76%, 45%',
+                'royal': '271, 91%, 65%',
+                'monochrome': '0, 0%, 45%'
+            };
+
+            const hslValues = colorMap[color].split(', ');
+            document.documentElement.style.setProperty('--primary-hue', hslValues[0]);
+            document.documentElement.style.setProperty('--primary-sat', hslValues[1]);
+            document.documentElement.style.setProperty('--primary-light', hslValues[2]);
+
             updateChartColors();
         }
 
@@ -1830,15 +2013,14 @@
         document.addEventListener('DOMContentLoaded', function() {
             const savedTheme = localStorage.getItem('theme') || 'light';
             const savedColor = localStorage.getItem('color') || 'monero';
-            
+
             document.body.setAttribute('data-theme', savedTheme);
             document.body.setAttribute('data-color', savedColor);
-            
-            // Update theme icon
+
             const icon = document.querySelector('#themeToggle i');
             if (icon) icon.className = savedTheme === 'light' ? 'fas fa-moon' : 'fas fa-sun';
-            
-            // Update active color dot
+
+            // Set active color dot
             const colorMap = {
                 'monero': '#f26822',
                 'ocean': '#06b6d4',
@@ -1846,65 +2028,111 @@
                 'royal': '#a855f7',
                 'monochrome': '#737373'
             };
-            
+
             document.querySelectorAll('.color-dot').forEach(dot => {
-                if (dot.style.background.includes(colorMap[savedColor])) {
+                if (dot.style.background === colorMap[savedColor]) {
                     dot.classList.add('active');
                 }
             });
 
-            // Initialize charts if on analytics tab
+            // Initialize charts
             {% if tab == 'analytics' %}
             setTimeout(initCharts, 100);
             {% endif %}
+
+            // Initialize particles
+            if (typeof particlesJS !== 'undefined') {
+                particlesJS('particles-js', {
+                    particles: {
+                        number: { value: 60, density: { enable: true, value_area: 800 } },
+                        color: { value: '#f26822' },
+                        shape: { type: 'circle' },
+                        opacity: { value: 0.3, random: true },
+                        size: { value: 2, random: true },
+                        line_linked: { enable: true, distance: 150, color: '#f26822', opacity: 0.2, width: 1 },
+                        move: { enable: true, speed: 2, direction: 'none', random: true, straight: false }
+                    },
+                    interactivity: {
+                        detect_on: 'canvas',
+                        events: { onhover: { enable: true, mode: 'repulse' }, onclick: { enable: true, mode: 'push' } }
+                    },
+                    retina_detect: true
+                });
+            }
+
+            // Initialize password protection toggles
+            const isProtectedCheckbox = document.getElementById('isProtected');
+            if (isProtectedCheckbox) {
+                isProtectedCheckbox.addEventListener('change', function() {
+                    const passwordField = document.getElementById('passwordField');
+                    if (passwordField) {
+                        passwordField.style.display = this.checked ? 'block' : 'none';
+                        if (this.checked && !document.getElementById('roomPassword').value) {
+                            generatePassword();
+                        }
+                    }
+                });
+            }
+
+            const settingsProtected = document.getElementById('settingsProtected');
+            if (settingsProtected) {
+                settingsProtected.addEventListener('change', function() {
+                    const passwordField = document.getElementById('settingsPasswordField');
+                    if (passwordField) passwordField.style.display = this.checked ? 'block' : 'none';
+                });
+            }
         });
 
-        // ========== SIDEBAR ==========
+        // Sidebar Toggle
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('show');
         }
 
-        // Close sidebar when clicking outside on mobile
         document.addEventListener('click', function(event) {
             const sidebar = document.getElementById('sidebar');
-            const toggle = document.querySelector('.menu-toggle');
-            
-            if (window.innerWidth <= 992 && 
-                !sidebar.contains(event.target) && 
-                !toggle.contains(event.target) &&
+            const toggle = document.querySelector('.menu-toggle-mobile');
+
+            if (window.innerWidth <= 992 && sidebar && toggle &&
+                !sidebar.contains(event.target) && !toggle.contains(event.target) &&
                 sidebar.classList.contains('show')) {
                 sidebar.classList.remove('show');
             }
         });
 
-        // ========== FORM HELPERS ==========
+        // Form Helpers
         function updateCounter(input, counterId) {
-            document.getElementById(counterId).textContent = input.value.length;
+            const counter = document.getElementById(counterId);
+            if (counter) counter.textContent = input.value.length;
         }
 
-        function toggleAdvanced(btn) {
+        function toggleAdvanced() {
             const el = document.getElementById('advancedSettings');
-            const icon = btn.querySelector('i');
-            
+            const icon = document.getElementById('advancedIcon');
+
             if (el.style.display === 'none') {
                 el.style.display = 'block';
-                icon.className = 'fas fa-chevron-up';
+                if (icon) icon.className = 'fas fa-chevron-up ms-2';
             } else {
                 el.style.display = 'none';
-                icon.className = 'fas fa-chevron-down';
+                if (icon) icon.className = 'fas fa-chevron-down ms-2';
             }
         }
 
         function selectTemplate(card, templateId) {
-            document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
+            document.querySelectorAll('.template-card-modern').forEach(c => c.classList.remove('selected'));
             card.classList.add('selected');
-            card.querySelector('input[type="radio"]').checked = true;
+            const radio = card.querySelector('input[type="radio"]');
+            if (radio) radio.checked = true;
+
+            // Animate
+            card.style.transform = 'scale(0.98)';
+            setTimeout(() => { card.style.transform = ''; }, 200);
         }
 
         function toggleFeature(element, featureId) {
             element.classList.toggle('selected');
             const checkbox = document.getElementById(`feature_${featureId}`);
-            checkbox.checked = !checkbox.checked;
+            if (checkbox) checkbox.checked = !checkbox.checked;
         }
 
         function generatePassword() {
@@ -1913,38 +2141,38 @@
             for (let i = 0; i < 16; i++) {
                 password += chars.charAt(Math.floor(Math.random() * chars.length));
             }
-            document.getElementById('roomPassword').value = password;
-            
-            // Copy to clipboard
+            const passwordField = document.getElementById('roomPassword');
+            if (passwordField) passwordField.value = password;
+
             navigator.clipboard.writeText(password).then(() => {
                 Swal.fire({
                     icon: 'success',
                     title: 'Password Generated',
-                    text: 'Password copied to clipboard',
+                    text: 'Copied to clipboard!',
                     timer: 1500,
                     showConfirmButton: false,
-                    background: 'var(--bg-card)',
-                    color: 'var(--text-primary)'
+                    background: 'var(--glass-bg)',
+                    backdrop: 'blur(10px)'
                 });
             });
         }
 
-        // Password field visibility
-        document.getElementById('isProtected')?.addEventListener('change', function() {
-            document.getElementById('passwordField').style.display = this.checked ? 'block' : 'none';
-            if (this.checked && !document.getElementById('roomPassword').value) {
-                generatePassword();
+        function generatePasswordForSettings() {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+            let password = '';
+            for (let i = 0; i < 16; i++) {
+                password += chars.charAt(Math.floor(Math.random() * chars.length));
             }
-        });
+            const passwordField = document.getElementById('settingsPassword');
+            if (passwordField) passwordField.value = password;
 
-        document.getElementById('settingsProtected')?.addEventListener('change', function() {
-            document.getElementById('settingsPasswordField').style.display = this.checked ? 'block' : 'none';
-        });
+            navigator.clipboard.writeText(password);
+        }
 
         // User filtering
         function filterUsers() {
             const search = document.getElementById('userSearch').value.toLowerCase();
-            document.querySelectorAll('.user-item').forEach(item => {
+            document.querySelectorAll('.user-item-modern[data-username]').forEach(item => {
                 const username = item.getAttribute('data-username');
                 item.style.display = username.includes(search) ? 'flex' : 'none';
             });
@@ -1954,24 +2182,24 @@
             document.querySelectorAll('input[name="users"]').forEach(cb => cb.checked = true);
         }
 
-        // ========== API CALLS ==========
+        // API Calls with SweetAlert
         function makeModerator(userId) {
             Swal.fire({
                 title: 'Make Moderator?',
-                text: 'This user will have moderation privileges',
+                text: 'This user will gain moderation privileges',
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonColor: 'var(--primary-500)',
-                cancelButtonColor: 'var(--text-muted)',
-                background: 'var(--bg-card)',
-                color: 'var(--text-primary)'
+                confirmButtonColor: 'var(--primary)',
+                cancelButtonColor: '#6c757d',
+                background: 'var(--glass-bg)',
+                backdrop: 'blur(10px)'
             }).then((result) => {
                 if (result.isConfirmed) {
                     fetch(`/api/chat/room/{{ current_room.slug }}/moderator/add/`, {
                         method: 'POST',
-                        headers: { 
-                            'X-CSRFToken': '{{ csrf_token }}', 
-                            'Content-Type': 'application/json' 
+                        headers: {
+                            'X-CSRFToken': '{{ csrf_token }}',
+                            'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({user_id: userId})
                     })
@@ -1984,8 +2212,7 @@
                                 text: 'Moderator added',
                                 timer: 1500,
                                 showConfirmButton: false,
-                                background: 'var(--bg-card)',
-                                color: 'var(--text-primary)'
+                                background: 'var(--glass-bg)'
                             }).then(() => location.reload());
                         }
                     });
@@ -2000,16 +2227,16 @@
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: 'var(--danger)',
-                cancelButtonColor: 'var(--text-muted)',
-                background: 'var(--bg-card)',
-                color: 'var(--text-primary)'
+                cancelButtonColor: '#6c757d',
+                background: 'var(--glass-bg)',
+                backdrop: 'blur(10px)'
             }).then((result) => {
                 if (result.isConfirmed) {
                     fetch(`/api/chat/room/{{ current_room.slug }}/moderator/remove/`, {
                         method: 'POST',
-                        headers: { 
-                            'X-CSRFToken': '{{ csrf_token }}', 
-                            'Content-Type': 'application/json' 
+                        headers: {
+                            'X-CSRFToken': '{{ csrf_token }}',
+                            'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({user_id: userId})
                     })
@@ -2022,8 +2249,7 @@
                                 text: 'Moderator removed',
                                 timer: 1500,
                                 showConfirmButton: false,
-                                background: 'var(--bg-card)',
-                                color: 'var(--text-primary)'
+                                background: 'var(--glass-bg)'
                             }).then(() => location.reload());
                         }
                     });
@@ -2039,21 +2265,19 @@
                 inputPlaceholder: 'Enter reason for ban...',
                 showCancelButton: true,
                 confirmButtonColor: 'var(--danger)',
-                cancelButtonColor: 'var(--text-muted)',
-                background: 'var(--bg-card)',
-                color: 'var(--text-primary)',
+                cancelButtonColor: '#6c757d',
+                background: 'var(--glass-bg)',
+                backdrop: 'blur(10px)',
                 inputValidator: (value) => {
-                    if (!value) {
-                        return 'Reason is required!';
-                    }
+                    if (!value) return 'Reason is required!';
                 }
             }).then((result) => {
                 if (result.isConfirmed) {
                     fetch(`/api/chat/room/{{ current_room.slug }}/ban/`, {
                         method: 'POST',
-                        headers: { 
-                            'X-CSRFToken': '{{ csrf_token }}', 
-                            'Content-Type': 'application/json' 
+                        headers: {
+                            'X-CSRFToken': '{{ csrf_token }}',
+                            'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({user_id: userId, reason: result.value})
                     })
@@ -2063,11 +2287,10 @@
                             Swal.fire({
                                 icon: 'success',
                                 title: 'User Banned',
-                                text: 'User has been banned from the room',
+                                text: 'User has been banned',
                                 timer: 1500,
                                 showConfirmButton: false,
-                                background: 'var(--bg-card)',
-                                color: 'var(--text-primary)'
+                                background: 'var(--glass-bg)'
                             }).then(() => location.reload());
                         }
                     });
@@ -2078,20 +2301,20 @@
         function unbanUser(userId) {
             Swal.fire({
                 title: 'Unban User?',
-                text: 'This user will be able to join the room again',
+                text: 'This user will be able to join again',
                 icon: 'question',
                 showCancelButton: true,
                 confirmButtonColor: 'var(--success)',
-                cancelButtonColor: 'var(--text-muted)',
-                background: 'var(--bg-card)',
-                color: 'var(--text-primary)'
+                cancelButtonColor: '#6c757d',
+                background: 'var(--glass-bg)',
+                backdrop: 'blur(10px)'
             }).then((result) => {
                 if (result.isConfirmed) {
                     fetch(`/api/chat/room/{{ current_room.slug }}/unban/`, {
                         method: 'POST',
-                        headers: { 
-                            'X-CSRFToken': '{{ csrf_token }}', 
-                            'Content-Type': 'application/json' 
+                        headers: {
+                            'X-CSRFToken': '{{ csrf_token }}',
+                            'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({user_id: userId})
                     })
@@ -2104,8 +2327,7 @@
                                 text: 'User has been unbanned',
                                 timer: 1500,
                                 showConfirmButton: false,
-                                background: 'var(--bg-card)',
-                                color: 'var(--text-primary)'
+                                background: 'var(--glass-bg)'
                             }).then(() => location.reload());
                         }
                     });
@@ -2120,28 +2342,27 @@
                     icon: 'error',
                     title: 'Error',
                     text: 'Please select a new owner',
-                    background: 'var(--bg-card)',
-                    color: 'var(--text-primary)'
+                    background: 'var(--glass-bg)'
                 });
                 return;
             }
-            
+
             Swal.fire({
                 title: 'Transfer Ownership?',
-                text: 'This action cannot be undone!',
+                text: 'You will lose admin privileges. This cannot be undone.',
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: 'var(--warning)',
-                cancelButtonColor: 'var(--text-muted)',
-                background: 'var(--bg-card)',
-                color: 'var(--text-primary)'
+                cancelButtonColor: '#6c757d',
+                background: 'var(--glass-bg)',
+                backdrop: 'blur(10px)'
             }).then((result) => {
                 if (result.isConfirmed) {
                     fetch(`/api/chat/room/{{ current_room.slug }}/transfer/`, {
                         method: 'POST',
-                        headers: { 
-                            'X-CSRFToken': '{{ csrf_token }}', 
-                            'Content-Type': 'application/json' 
+                        headers: {
+                            'X-CSRFToken': '{{ csrf_token }}',
+                            'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({new_owner_id: newOwner})
                     })
@@ -2154,8 +2375,7 @@
                                 text: 'Room ownership has been transferred',
                                 timer: 1500,
                                 showConfirmButton: false,
-                                background: 'var(--bg-card)',
-                                color: 'var(--text-primary)'
+                                background: 'var(--glass-bg)'
                             }).then(() => location.reload());
                         }
                     });
@@ -2166,20 +2386,18 @@
         function archiveRoom() {
             Swal.fire({
                 title: 'Archive Room?',
-                text: 'The room will become read-only',
+                text: 'The room will become read-only and can be restored later.',
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: 'var(--warning)',
-                cancelButtonColor: 'var(--text-muted)',
-                background: 'var(--bg-card)',
-                color: 'var(--text-primary)'
+                cancelButtonColor: '#6c757d',
+                background: 'var(--glass-bg)',
+                backdrop: 'blur(10px)'
             }).then((result) => {
                 if (result.isConfirmed) {
                     fetch(`/api/chat/room/{{ current_room.slug }}/archive/`, {
                         method: 'POST',
-                        headers: { 
-                            'X-CSRFToken': '{{ csrf_token }}' 
-                        }
+                        headers: { 'X-CSRFToken': '{{ csrf_token }}' }
                     })
                     .then(r => r.json())
                     .then(data => {
@@ -2187,11 +2405,10 @@
                             Swal.fire({
                                 icon: 'success',
                                 title: 'Room Archived',
-                                text: 'The room has been archived',
+                                text: 'Room has been archived',
                                 timer: 1500,
                                 showConfirmButton: false,
-                                background: 'var(--bg-card)',
-                                color: 'var(--text-primary)'
+                                background: 'var(--glass-bg)'
                             }).then(() => {
                                 window.location.href = "{% url 'XMR:chat_room' %}";
                             });
@@ -2204,66 +2421,60 @@
         function deleteRule(ruleId) {
             Swal.fire({
                 title: 'Delete Rule?',
-                text: 'This auto-response rule will be removed',
+                text: 'This auto-response will be removed',
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: 'var(--danger)',
-                cancelButtonColor: 'var(--text-muted)',
-                background: 'var(--bg-card)',
-                color: 'var(--text-primary)'
+                cancelButtonColor: '#6c757d',
+                background: 'var(--glass-bg)',
+                backdrop: 'blur(10px)'
             }).then((result) => {
                 if (result.isConfirmed) {
                     fetch(`/api/chat/auto-response/${ruleId}/delete/`, {
                         method: 'POST',
-                        headers: { 
-                            'X-CSRFToken': '{{ csrf_token }}' 
-                        }
+                        headers: { 'X-CSRFToken': '{{ csrf_token }}' }
                     })
                     .then(r => r.json())
                     .then(data => {
-                        if (data.success) {
-                            location.reload();
-                        }
+                        if (data.success) location.reload();
                     });
                 }
             });
         }
 
         function confirmDelete() {
-            return Swal.fire({
+            Swal.fire({
                 title: 'Delete Room?',
-                text: 'This action cannot be undone! All messages will be lost.',
-                icon: 'warning',
+                text: 'This action cannot be undone! All messages will be permanently lost.',
+                icon: 'error',
                 showCancelButton: true,
                 confirmButtonColor: 'var(--danger)',
-                cancelButtonColor: 'var(--text-muted)',
-                background: 'var(--bg-card)',
-                color: 'var(--text-primary)'
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, delete permanently',
+                background: 'var(--glass-bg)',
+                backdrop: 'blur(10px)'
             }).then((result) => {
-                return result.isConfirmed;
+                if (result.isConfirmed) {
+                    return true;
+                }
+                return false;
             });
+            return false;
         }
 
-        // ========== CHARTS - FIXED STATIC VERSION ==========
+        // Charts
         let activityChart = null;
         let messageChart = null;
 
         function initCharts() {
-            // Destroy existing charts if they exist
-            if (activityChart) {
-                activityChart.destroy();
-            }
-            if (messageChart) {
-                messageChart.destroy();
-            }
+            if (activityChart) activityChart.destroy();
+            if (messageChart) messageChart.destroy();
 
-            // Activity Chart
             const ctx1 = document.getElementById('activityChart')?.getContext('2d');
             if (ctx1) {
-                const primaryColor = getComputedStyle(document.body).getPropertyValue('--primary-500').trim();
-                const textSecondary = getComputedStyle(document.body).getPropertyValue('--text-secondary').trim();
-                const borderLight = getComputedStyle(document.body).getPropertyValue('--border-light').trim();
-                
+                const primaryColor = getComputedStyle(document.body).getPropertyValue('--primary').trim();
+                const textSecondary = getComputedStyle(document.body).getPropertyValue('--gray-600').trim();
+
                 activityChart = new Chart(ctx1, {
                     type: 'line',
                     data: {
@@ -2279,9 +2490,9 @@
                                 gradient.addColorStop(1, 'transparent');
                                 return gradient;
                             },
-                            borderWidth: 2,
-                            pointRadius: 4,
-                            pointHoverRadius: 6,
+                            borderWidth: 3,
+                            pointRadius: 5,
+                            pointHoverRadius: 8,
                             pointBackgroundColor: primaryColor,
                             pointBorderColor: 'white',
                             pointBorderWidth: 2,
@@ -2292,62 +2503,39 @@
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
-                        animation: {
-                            duration: 0  // Disable animations completely
-                        },
-                        hover: {
-                            animationDuration: 0  // Disable hover animations
-                        },
-                        responsiveAnimationDuration: 0,  // Disable resize animations
                         plugins: {
-                            legend: {
-                                display: false
-                            },
+                            legend: { display: false },
                             tooltip: {
                                 enabled: true,
-                                mode: 'index',
-                                intersect: false,
-                                backgroundColor: 'var(--bg-card)',
-                                titleColor: 'var(--text-primary)',
-                                bodyColor: 'var(--text-secondary)',
-                                borderColor: 'var(--border-light)',
+                                backgroundColor: 'var(--glass-bg)',
+                                titleColor: 'var(--gray-800)',
+                                bodyColor: 'var(--gray-600)',
+                                borderColor: 'var(--glass-border)',
                                 borderWidth: 1
                             }
                         },
                         scales: {
-                            y: { 
+                            y: {
                                 beginAtZero: true,
-                                grid: { 
-                                    color: borderLight,
-                                    drawBorder: false
-                                },
-                                ticks: { 
-                                    color: textSecondary,
-                                    stepSize: 20
-                                }
+                                grid: { color: 'var(--glass-border)' },
+                                ticks: { color: textSecondary }
                             },
-                            x: { 
-                                grid: { 
-                                    display: false
-                                },
-                                ticks: { 
-                                    color: textSecondary
-                                }
+                            x: {
+                                grid: { display: false },
+                                ticks: { color: textSecondary }
                             }
                         }
                     }
                 });
             }
 
-            // Message Type Chart
             const ctx2 = document.getElementById('messageTypeChart')?.getContext('2d');
             if (ctx2) {
-                const primaryColor = getComputedStyle(document.body).getPropertyValue('--primary-500').trim();
+                const primaryColor = getComputedStyle(document.body).getPropertyValue('--primary').trim();
                 const infoColor = getComputedStyle(document.body).getPropertyValue('--info').trim() || '#3b82f6';
                 const successColor = getComputedStyle(document.body).getPropertyValue('--success').trim() || '#10b981';
-                const mutedColor = getComputedStyle(document.body).getPropertyValue('--text-muted').trim() || '#6c757d';
-                const textSecondary = getComputedStyle(document.body).getPropertyValue('--text-secondary').trim();
-                
+                const mutedColor = getComputedStyle(document.body).getPropertyValue('--gray-500').trim() || '#6c757d';
+
                 messageChart = new Chart(ctx2, {
                     type: 'doughnut',
                     data: {
@@ -2356,37 +2544,17 @@
                             data: [70, 15, 10, 5],
                             backgroundColor: [primaryColor, infoColor, successColor, mutedColor],
                             borderWidth: 0,
-                            hoverOffset: 0
+                            hoverOffset: 10
                         }]
                     },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
-                        animation: {
-                            duration: 0  // Disable animations completely
-                        },
-                        hover: {
-                            animationDuration: 0  // Disable hover animations
-                        },
-                        responsiveAnimationDuration: 0,  // Disable resize animations
-                        cutout: '60%',
+                        cutout: '65%',
                         plugins: {
                             legend: {
                                 position: 'bottom',
-                                labels: { 
-                                    color: textSecondary,
-                                    padding: 20,
-                                    usePointStyle: true,
-                                    pointStyle: 'circle'
-                                }
-                            },
-                            tooltip: {
-                                enabled: true,
-                                backgroundColor: 'var(--bg-card)',
-                                titleColor: 'var(--text-primary)',
-                                bodyColor: 'var(--text-secondary)',
-                                borderColor: 'var(--border-light)',
-                                borderWidth: 1
+                                labels: { color: 'var(--gray-600)', padding: 15, usePointStyle: true }
                             }
                         }
                     }
@@ -2394,51 +2562,49 @@
             }
         }
 
-        // Update chart colors when theme changes
         function updateChartColors() {
             if (activityChart || messageChart) {
-                // Reinitialize charts to update colors
-                initCharts();
+                setTimeout(initCharts, 100);
             }
         }
 
-        // Resize handler for charts
-        let resizeTimer;
-        window.addEventListener('resize', function() {
-            clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(function() {
-                if (activityChart) {
-                    activityChart.resize();
-                }
-                if (messageChart) {
-                    messageChart.resize();
-                }
-            }, 250);
-        });
-
-        // ========== LOADING STATES ==========
+        // Form submit loading state
         document.querySelectorAll('form').forEach(form => {
             form.addEventListener('submit', function() {
                 const btn = this.querySelector('button[type="submit"]');
                 if (btn && !btn.disabled) {
                     btn.disabled = true;
-                    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
+                    btn.innerHTML = '<span class="spinner-modern me-2"></span>Processing...';
                 }
             });
         });
 
         // Auto-dismiss alerts
         setTimeout(() => {
-            document.querySelectorAll('.alert').forEach(alert => {
-                const bsAlert = bootstrap.Alert.getOrCreateInstance(alert);
-                if (bsAlert) {
-                    bsAlert.close();
-                }
+            document.querySelectorAll('.alert-modern').forEach(alert => {
+                alert.style.opacity = '0';
+                setTimeout(() => alert.remove(), 300);
             });
         }, 5000);
+
+        // Window resize handler
+        let resizeTimer;
+        window.addEventListener('resize', function() {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(function() {
+                if (activityChart) activityChart.resize();
+                if (messageChart) messageChart.resize();
+            }, 250);
+        });
+
+        // Initialize counters
+        const roomNameInput = document.getElementById('roomName');
+        const roomDescInput = document.getElementById('roomDescription');
+        if (roomNameInput) updateCounter(roomNameInput, 'roomNameCounter');
+        if (roomDescInput) updateCounter(roomDescInput, 'descCounter');
     </script>
 
     <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

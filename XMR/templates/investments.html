@@ -1143,6 +1143,35 @@
                 min-width: 1200px;
             }
         }
+
+        /* ===== SCHEDULE INFO BADGES ===== */
+        .schedule-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            display: inline-block;
+        }
+
+        .schedule-badge.weekday {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-success);
+        }
+
+        .schedule-badge.weekend {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--accent-warning);
+        }
+
+        .schedule-badge.open {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-success);
+        }
+
+        .schedule-badge.closed {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--accent-danger);
+        }
     </style>
 </head>
 <body>
@@ -1229,42 +1258,6 @@
         </div>
     </div>
 
-    <!-- Charts Section -->
-    <div class="charts-grid" data-aos="fade-up" data-aos-delay="100">
-        <div class="chart-card">
-            <div class="chart-header">
-                <h5><i class="fa-solid fa-chart-line me-2" style="color: var(--accent-primary);"></i>Performance Overview (Last 7 Days)</h5>
-                <span class="badge" style="background: var(--accent-primary);">Live</span>
-            </div>
-            <div class="chart-container">
-                <canvas id="performanceChart"></canvas>
-            </div>
-        </div>
-        
-        <div class="chart-card">
-            <div class="chart-header">
-                <h5><i class="fa-solid fa-pie-chart me-2" style="color: var(--accent-primary);"></i>Portfolio Distribution</h5>
-            </div>
-            <div class="chart-container">
-                <canvas id="distributionChart"></canvas>
-            </div>
-            <div class="quick-stats">
-                <div class="quick-stat">
-                    <div class="quick-stat-value">{{ active_investments|length }}</div>
-                    <div class="quick-stat-label">Active</div>
-                </div>
-                <div class="quick-stat">
-                    <div class="quick-stat-value">{{ completed_investments|length }}</div>
-                    <div class="quick-stat-label">Completed</div>
-                </div>
-                <div class="quick-stat">
-                    <div class="quick-stat-value">{{ user_token_purchases|length|default:"0" }}</div>
-                    <div class="quick-stat-label">Tokens</div>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- Stats Grid -->
     <div class="stats-grid" data-aos="fade-up" data-aos-delay="150">
         <div class="stat-card">
@@ -1290,7 +1283,7 @@
                     <i class="fa-solid fa-chart-simple"></i>
                 </div>
                 <span class="stat-trend">
-                    <i class="fa-regular fa-clock"></i> {{ next_payout_days|default:"0" }} days
+                    <i class="fa-regular fa-clock"></i> {{ next_payout_days|default:"0" }} business days
                 </span>
             </div>
             <div class="stat-value">{{ total_invested|floatformat:0 }}</div>
@@ -1324,10 +1317,10 @@
                     <i class="fa-regular fa-gem"></i>
                 </div>
                 <span class="stat-trend">
-                    <i class="fa-regular fa-clock"></i> 24h cycles
+                    <i class="fa-regular fa-clock"></i> {{ active_investments|length }} active
                 </span>
             </div>
-            <div class="stat-value">{{ user_token_purchases|length|default:"0" }}</div>
+            <div class="stat-value">{{ active_investments|length }}</div>
             <div class="stat-label">Tokens Owned</div>
             <div class="stat-footer">
                 <span>{{ total_referrals|default:"0" }} referrals</span>
@@ -1336,8 +1329,54 @@
         </div>
     </div>
 
+    <!-- Schedule Info Cards -->
+    <div class="row g-3 mb-4" data-aos="fade-up" data-aos-delay="200">
+        <div class="col-md-6">
+            <div class="card schedule-card" style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 16px;">
+                <div class="card-body">
+                    <h6 class="card-title">
+                        <i class="fa-regular fa-calendar me-2" style="color: var(--accent-primary);"></i>
+                        Payout Schedule
+                    </h6>
+                    <p class="card-text small text-muted">Monday - Friday (Weekdays only)</p>
+                    <span class="schedule-badge {% if is_weekday %}weekday{% else %}weekend{% endif %}">
+                        <i class="fa-solid {% if is_weekday %}fa-check-circle{% else %}fa-pause-circle{% endif %} me-1"></i>
+                        {% if is_weekday %}Today is a payout day{% else %}Weekend - No payouts{% endif %}
+                    </span>
+                    {% if is_weekend %}
+                        <p class="small text-muted mt-2 mb-0">
+                            <i class="fa-regular fa-clock me-1"></i>
+                            Next payout: {{ next_payout_day }}
+                        </p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card schedule-card" style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 16px;">
+                <div class="card-body">
+                    <h6 class="card-title">
+                        <i class="fa-solid fa-money-bill-wave me-2" style="color: var(--accent-success);"></i>
+                        Withdrawal Schedule
+                    </h6>
+                    <p class="card-text small text-muted">Saturday - Sunday, 8:00 AM - 5:00 PM</p>
+                    <span class="schedule-badge {% if is_withdrawal_open %}open{% else %}closed{% endif %}">
+                        <i class="fa-solid {% if is_withdrawal_open %}fa-check-circle{% else %}fa-clock{% endif %} me-1"></i>
+                        {% if is_withdrawal_open %}Window Open!{% else %}{{ next_withdrawal_window }}{% endif %}
+                    </span>
+                    {% if not is_withdrawal_open %}
+                        <p class="small text-muted mt-2 mb-0">
+                            <i class="fa-regular fa-clock me-1"></i>
+                            {{ withdrawal_status_message }}
+                        </p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Balance Card -->
-    <div class="balance-card" data-aos="fade-up" data-aos-delay="200">
+    <div class="balance-card" data-aos="fade-up" data-aos-delay="250">
         <div class="row align-items-center">
             <div class="col-lg-6">
                 <div class="balance-label">Your Available Balance</div>
@@ -1356,25 +1395,29 @@
             <div class="col-lg-6">
                 <div class="row g-4">
                     <div class="col-6">
-                        <div class="balance-label">Next Payout</div>
-                        <div class="fs-1 fw-bold" style="color: var(--accent-primary);">{{ next_payout_days|default:"0" }} <small class="fs-6">days</small></div>
+                        <div class="balance-label">Business Days Remaining</div>
+                        <div class="fs-1 fw-bold" style="color: var(--accent-primary);">
+                            {{ next_payout_days|default:"0" }} <small class="fs-6">days</small>
+                        </div>
                         {% if next_payout %}
-                        <small class="text-muted">{{ next_payout.token.name }} - {{ next_payout.daily_return|floatformat:0 }} KSH/day</small>
+                        <small class="text-muted">
+                            <i class="fa-regular fa-calendar me-1"></i>
+                            Matures: {{ next_payout.end_date|date:"M d, Y" }}
+                        </small>
+                        {% else %}
+                        <small class="text-muted">No active investments</small>
                         {% endif %}
                     </div>
                     <div class="col-6">
                         <div class="balance-label">Daily Returns</div>
                         <div class="fs-1 fw-bold" style="color: var(--accent-success);">
-                            {% with total_daily=0 %}
-                                {% for inv in active_investments %}
-                                    {% with total_daily=total_daily|add:inv.daily_return %}
-                                    {% endwith %}
-                                {% endfor %}
-                                {{ total_daily|default:"0"|floatformat:0 }}
-                            {% endwith %}
+                            {{ total_daily_return|default:"0"|floatformat:0 }}
                             <small class="fs-6">KSH</small>
                         </div>
-                        <small class="text-muted">Across {{ active_investments|length }} investments</small>
+                        <small class="text-muted">
+                            <i class="fa-regular fa-clock me-1"></i>
+                            Next payout: {% if is_weekend %}Monday{% else %}Today{% endif %}
+                        </small>
                     </div>
                 </div>
             </div>
@@ -1382,7 +1425,7 @@
     </div>
 
     <!-- Marketplace Section -->
-    <div class="marketplace-header" data-aos="fade-up" data-aos-delay="250">
+    <div class="marketplace-header" data-aos="fade-up" data-aos-delay="300">
         <h2 class="marketplace-title">Investment Marketplace</h2>
         <div class="filter-group">
             <button class="filter-btn active" onclick="filterTokens('all')">All</button>
@@ -1397,7 +1440,7 @@
     </div>
 
     <!-- Tokens Grid -->
-    <div class="tokens-grid" id="tokensGrid" data-aos="fade-up" data-aos-delay="300">
+    <div class="tokens-grid" id="tokensGrid" data-aos="fade-up" data-aos-delay="350">
         {% for token in active_tokens %}
         <div class="token-card" data-token-id="{{ token.id }}" data-token-status="{{ token.status|lower }}">
             {% if token.status == 'ACTIVE' %}
@@ -1432,7 +1475,7 @@
                 </div>
                 <div class="metric">
                     <span class="metric-label">Duration</span>
-                    <span class="metric-value">{{ token.return_days }} <small>days</small></span>
+                    <span class="metric-value">{{ token.return_days }} <small>business days</small></span>
                 </div>
                 <div class="metric">
                     <span class="metric-label">Total Return</span>
@@ -1441,16 +1484,6 @@
             </div>
 
             <div class="token-progress">
-                <div class="progress-info">
-                    <span>Availability</span>
-                    <span>
-                        {% if token.total_supply %}
-                            {{ token.purchased_count }}/{{ token.total_supply }} sold
-                        {% else %}
-                            {{ token.purchased_count }} sold
-                        {% endif %}
-                    </span>
-                </div>
                 <div class="progress-bar-bg">
                     {% if token.total_supply %}
                         <div class="progress-fill" style="width: {% widthratio token.purchased_count token.total_supply 100 %}%"></div>
@@ -1465,7 +1498,7 @@
                     <i class="fa-solid fa-chart-line me-1"></i>
                     {{ token.roi|floatformat:1 }}% ROI
                 </div>
-                
+
                 {% if token.status == 'ACTIVE' %}
                     {% if token.total_supply and token.purchased_count >= token.total_supply %}
                         <button class="invest-btn" disabled>
@@ -1476,11 +1509,11 @@
                             <i class="fa-solid fa-ban"></i> Insufficient
                         </button>
                     {% else %}
-                        <button class="invest-btn invest-now" 
-                                data-token-id="{{ token.id }}" 
-                                data-token-name="{{ token.name }}" 
-                                data-amount="{{ token.minimum_investment }}" 
-                                data-daily="{{ token.daily_return }}" 
+                        <button class="invest-btn invest-now"
+                                data-token-id="{{ token.id }}"
+                                data-token-name="{{ token.name }}"
+                                data-amount="{{ token.minimum_investment }}"
+                                data-daily="{{ token.daily_return }}"
                                 data-days="{{ token.return_days }}">
                             <i class="fa-solid fa-bolt"></i> Invest Now
                         </button>
@@ -1510,7 +1543,7 @@
         <div class="section-header">
             <h3>
                 <i class="fa-solid fa-chart-line"></i>
-                Active Portfolio
+                Active Investments
             </h3>
             <div>
                 <span class="section-badge">{{ active_investments|length }} Active</span>
@@ -1575,7 +1608,7 @@
                             {% endif %}
                         </td>
                         <td>
-                            <span class="countdown-timer {% if investment.remaining_payouts < 3 %}countdown-urgent{% else %}countdown-normal{% endif %}" 
+                            <span class="countdown-timer {% if investment.remaining_payouts < 3 %}countdown-urgent{% else %}countdown-normal{% endif %}"
                                   data-end="{{ investment.end_date|date:'U' }}"
                                   data-last-payout="{% if investment.last_payout_date %}{{ investment.last_payout_date|date:'U' }}{% endif %}"
                                   data-created="{{ investment.created_at|date:'U' }}">
@@ -1745,7 +1778,7 @@
     // Theme Toggle
     const themeToggle = document.getElementById('themeToggle');
     const html = document.documentElement;
-    
+
     themeToggle.addEventListener('click', () => {
         const currentTheme = html.getAttribute('data-bs-theme');
         const newTheme = currentTheme === 'light' ? 'dark' : 'light';
@@ -1853,7 +1886,7 @@
     function filterTokens(status) {
         document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
         event.target.classList.add('active');
-        
+
         document.querySelectorAll('.token-card').forEach(card => {
             const cardStatus = card.dataset.tokenStatus;
             card.style.display = status === 'all' || cardStatus === status ? 'block' : 'none';
@@ -1899,7 +1932,7 @@
                             </div>
                             <div class="col-6">
                                 <small class="text-muted">Duration</small>
-                                <div class="h4 mb-0">${days} Days</div>
+                                <div class="h4 mb-0">${days} Business Days</div>
                             </div>
                             <div class="col-6">
                                 <small class="text-muted">Total Return</small>
@@ -1915,7 +1948,7 @@
                     </div>
                     <p class="text-muted mt-3 mb-0">
                         <i class="fa-regular fa-clock me-1"></i>
-                        Funds will be locked for ${days} days with daily payouts
+                        Funds will be locked for ${days} business days with daily payouts
                     </p>
                 </div>
             `;
@@ -1930,12 +1963,12 @@
             const form = document.createElement('form');
             form.method = 'POST';
             form.action = "{% url 'XMR:buy_investment' 0 %}".replace('0', currentTokenId);
-            
+
             const csrf = document.createElement('input');
             csrf.type = 'hidden';
             csrf.name = 'csrfmiddlewaretoken';
             csrf.value = '{{ csrf_token }}';
-            
+
             form.appendChild(csrf);
             document.body.appendChild(form);
             form.submit();
@@ -1945,28 +1978,30 @@
     // ===== COUNTDOWN TIMER =====
     function updateCountdowns() {
         const now = Math.floor(Date.now() / 1000);
-        
+
         document.querySelectorAll('.countdown-timer').forEach(timer => {
             const endDate = parseInt(timer.dataset.end);
             const lastPayout = timer.dataset.lastPayout ? parseInt(timer.dataset.lastPayout) : null;
             const created = parseInt(timer.dataset.created);
-            
+
             let nextPayout;
             if (!lastPayout || isNaN(lastPayout)) {
+                // First payout: 24 hours after creation (business day check in backend)
                 nextPayout = created + (24 * 3600);
             } else {
+                // Subsequent payouts: 24 hours after last payout
                 nextPayout = lastPayout + (24 * 3600);
             }
-            
+
             const secondsLeft = nextPayout - now;
-            
+
             if (secondsLeft <= 0) {
                 timer.innerHTML = '<span class="text-warning"><i class="fa-solid fa-spinner fa-spin"></i> Processing</span>';
             } else {
                 const hours = Math.floor(secondsLeft / 3600);
                 const minutes = Math.floor((secondsLeft % 3600) / 60);
                 const seconds = secondsLeft % 60;
-                
+
                 let timeString;
                 if (hours > 24) {
                     const days = Math.floor(hours / 24);
@@ -1976,7 +2011,7 @@
                 } else {
                     timeString = `${minutes}m ${seconds}s`;
                 }
-                
+
                 timer.innerHTML = timeString;
             }
         });
@@ -1989,7 +2024,6 @@
     function showInvestmentDetails(investmentId) {
         const row = document.getElementById(`investment-${investmentId}`);
         if (!row) {
-            // Find the row by data attribute
             const rows = document.querySelectorAll(`tr[onclick*="showInvestmentDetails(${investmentId})"]`);
             if (rows.length > 0) {
                 const cells = rows[0].cells;

@@ -1,44 +1,250 @@
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth import authenticate, login, logout
-from django.contrib.auth.models import User
-from django.contrib import messages
-from django.contrib.auth.decorators import login_required
-from django.views.decorators.http import require_POST, require_http_methods
-from django.core.validators import validate_email
-from django.core.exceptions import ValidationError
-from django.utils import timezone
-from django.db.models import F, Max, OuterRef, Subquery, Sum, Q, Prefetch, F, Count, Value, BooleanField, Case, When
-from django.db import transaction, IntegrityError,  connection
-from django.http import HttpResponseRedirect, JsonResponse,  HttpResponse
-from django.core.paginator import Paginator
-from django.core.cache import cache
-from decimal import Decimal, InvalidOperation
+import calendar
 import hashlib
-from typing import Dict, Any, Optional, List
-from datetime import timedelta
-from contextlib import contextmanager
-from django.db.models.functions import Coalesce
-from django.views.decorators.csrf import csrf_exempt
-from django.conf import settings
-import os
-import re
 import json
 import logging
 import math
-from .models import ChatNotificationMessage, ChatRoom, ChatMessage, ChatActivity, ChatNotification, ChatReaction
-from django.db.models import Count, Q       
+import os
+import re
+from contextlib import contextmanager
+from datetime import datetime, time, timedelta
+from decimal import Decimal, InvalidOperation
+from typing import Any, Dict, List, Optional
+
+from django.conf import settings
+from django.contrib import messages
+from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
+from django.core.cache import cache
+from django.core.exceptions import ValidationError
+from django.core.paginator import Paginator
+from django.core.validators import validate_email
+from django.db import IntegrityError, connection, transaction
+from django.db.models import (
+    BooleanField,
+    Case,
+    Count,
+    F,
+    Max,
+    OuterRef,
+    Prefetch,
+    Q,
+    Subquery,
+    Sum,
+    Value,
+    When,
+)
+from django.db.models.functions import Coalesce
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.utils.text import slugify
-import json
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods, require_POST
+
+from .models import (
+    ChatActivity,
+    ChatMessage,
+    ChatNotification,
+    ChatNotificationMessage,
+    ChatReaction,
+    ChatRoom,
+)
+
 
 from .models import (
     UserProfile, Wallet, Transaction, MpesaPayment, 
     Token, Investment, WithdrawalRequest, SystemConfig, SystemLog
 )
 
+# ==================== WEEKDAY/WEEKEND UTILITY FUNCTIONS ====================
+
+def is_weekday(date=None):
+    """
+    Check if a given date is a weekday (Monday-Friday)
+    Returns: True if weekday, False if weekend
+    """
+    if date is None:
+        date = timezone.now()
+    # weekday(): Monday=0, Tuesday=1, Wednesday=2, Thursday=3, Friday=4, Saturday=5, Sunday=6
+    return date.weekday() < 5
+
+
+def is_weekend(date=None):
+    """
+    Check if a given date is a weekend (Saturday-Sunday)
+    Returns: True if weekend, False if weekday
+    """
+    if date is None:
+        date = timezone.now()
+    return date.weekday() >= 5
+
+
+def is_withdrawal_window(date=None):
+    """
+    Check if current time is within withdrawal window:
+    - Weekend (Saturday or Sunday)
+    - Between 8 AM and 5 PM
+    """
+    if date is None:
+        date = timezone.now()
+
+    # Check if it's weekend
+    if not is_weekend(date):
+        return False, "Withdrawals are only available on weekends (Saturday and Sunday)"
+
+    # Check time window: 8 AM to 5 PM
+    current_time = date.time()
+    start_time = time(8, 0)  # 8:00 AM
+    end_time = time(17, 0)  # 5:00 PM
+
+    if current_time < start_time:
+        return False, "Withdrawals start at 8:00 AM"
+
+    if current_time > end_time:
+        return False, "Withdrawals close at 5:00 PM"
+
+    return True, "Withdrawal window is open"
+
+
+def get_withdrawal_window_status():
+    """
+    Get detailed status of withdrawal window for display
+    """
+    from django.utils import timezone
+    now = timezone.now()
+
+    if is_weekend(now):
+        current_time = now.time()
+        start_time = time(8, 0)
+        end_time = time(17, 0)
+
+        if current_time < start_time:
+            # FIX: Make datetime timezone-aware
+            start_datetime = timezone.make_aware(
+                datetime.combine(now.date(), start_time)
+            )
+            remaining = (start_datetime - now).total_seconds() / 60
+            return {
+                'open': False,
+                'status': 'Not yet open',
+                'message': f'Withdrawals open at 8:00 AM ({int(remaining)} minutes remaining)',
+                'opens_at': '8:00 AM',
+                'closes_at': '5:00 PM'
+            }
+        elif current_time > end_time:
+            return {
+                'open': False,
+                'status': 'Closed',
+                'message': 'Withdrawals closed for today. Please try again next weekend.',
+                'opens_at': '8:00 AM',
+                'closes_at': '5:00 PM'
+            }
+        else:
+            # FIX: Make datetime timezone-aware
+            end_datetime = timezone.make_aware(
+                datetime.combine(now.date(), end_time)
+            )
+            remaining = (end_datetime - now).total_seconds() / 60
+            return {
+                'open': True,
+                'status': 'Open',
+                'message': f'Withdrawals are open! ({int(remaining)} minutes remaining)',
+                'opens_at': '8:00 AM',
+                'closes_at': '5:00 PM'
+            }
+    else:
+        # It's a weekday
+        days_until_weekend = 5 - now.weekday()  # Days until Saturday
+        return {
+            'open': False,
+            'status': 'Weekday',
+            'message': f'Withdrawals are only available on weekends. Next window opens in {days_until_weekend} days.',
+            'opens_at': '8:00 AM (Saturday)',
+            'closes_at': '5:00 PM (Sunday)'
+        }
+
+def count_business_days(start_date, end_date):
+    """
+    Count business days (Monday-Friday) between two dates
+    """
+    if start_date > end_date:
+        return 0
+
+    # Convert to date objects for comparison
+    start = start_date.date() if hasattr(start_date, 'date') else start_date
+    end = end_date.date() if hasattr(end_date, 'date') else end_date
+
+    # If same day, count if it's a weekday
+    if start == end:
+        return 1 if start.weekday() < 5 else 0
+
+    # Count business days
+    business_days = 0
+    current = start
+
+    while current <= end:
+        if current.weekday() < 5:  # Monday=0, Friday=4
+            business_days += 1
+        current += timedelta(days=1)
+
+    return business_days
+
+
+def count_business_days_between(start_date, end_date):
+    """
+    Count business days between two dates (inclusive)
+    """
+    if start_date > end_date:
+        return 0
+
+    # Convert to date objects
+    start = start_date.date() if hasattr(start_date, 'date') else start_date
+    end = end_date.date() if hasattr(end_date, 'date') else end_date
+
+    business_days = 0
+    current = start
+
+    while current <= end:
+        if current.weekday() < 5:
+            business_days += 1
+        current += timedelta(days=1)
+
+    return business_days
+
+
+def get_next_business_day(date=None):
+    """
+    Get the next business day (Monday-Friday)
+    """
+    if date is None:
+        date = timezone.now()
+
+    next_day = date + timedelta(days=1)
+
+    # Keep adding days until we hit a weekday
+    while next_day.weekday() >= 5:
+        next_day += timedelta(days=1)
+
+    return next_day
+
+
+def get_last_business_day(date=None):
+    """
+    Get the last business day (Monday-Friday)
+    """
+    if date is None:
+        date = timezone.now()
+
+    prev_day = date - timedelta(days=1)
+
+    while prev_day.weekday() >= 5:
+        prev_day -= timedelta(days=1)
+
+    return prev_day
+
 # Set up logging
 logger = logging.getLogger(__name__)
-
-# ==================== CACHE UTILITIES ====================
 
 def safe_cache_delete_pattern(pattern):
     """
@@ -59,70 +265,81 @@ def safe_cache_delete_pattern(pattern):
 if not hasattr(cache, 'delete_pattern'):
     cache.delete_pattern = safe_cache_delete_pattern
 
-
-
-
-
 # ==================== AUTO PAYOUT HELPER FUNCTION ====================
+# ==================== CORRECTED AUTO PAYOUT HELPER FUNCTIONS ====================
 
 def check_user_payouts(user):
     """
-    Enhanced version that catches up ALL missed payouts for a user
-    Calculates how many 24-hour cycles have passed and issues all due payouts
+    Enhanced version that ONLY processes payouts on weekdays (Monday-Friday)
+    Weekends are skipped - payouts accumulate and process on the next business day
+
+    This function is called when users visit their account or investments page.
+    It processes ONE payout per business day that has passed since the last payout.
     """
     if not user.is_authenticated:
         return 0
-    
+
     from .models import Investment
-    from django.utils import timezone
-    
+
+    now = timezone.now()
+
+    # ===== WEEKEND CHECK =====
+    if is_weekend(now):
+        logger.info(f"Weekend detected ({now.strftime('%A')}) - Payouts paused for user {user.username}")
+        return 0  # No payouts on weekends
+
     # Get user's active investments that still have payouts remaining
     investments = Investment.objects.filter(
         user=user,
         status='ACTIVE',
         remaining_payouts__gt=0
     )
-    
+
     processed_count = 0
-    now = timezone.now()
-    
+
     for investment in investments:
         try:
-            # Calculate how many payouts should have been processed by now
-            payouts_to_process = calculate_missed_payouts(investment, now)
-            
-            if payouts_to_process > 0:
-                logger.info(f"Found {payouts_to_process} missed payouts for investment {investment.id}")
-                
-                # Process each missed payout
-                for i in range(payouts_to_process):
-                    success = investment.process_daily_payout()
-                    if success:
-                        processed_count += 1
-                    else:
-                        # Stop if we hit an error or investment completed
-                        break
-                        
+            # Calculate how many business days have passed since last payout
+            reference_time = investment.last_payout_date or investment.created_at
+
+            # Count business days (weekdays only) between reference and now
+            business_days_passed = count_business_days(reference_time, now)
+
+            # Process exactly ONE payout per business day that has passed
+            # This handles catch-up for missed weekdays (e.g., Monday catches up Friday)
+            if business_days_passed >= 1:
+                # Process only ONE payout per check to prevent multiple in one day
+                success = investment.process_daily_payout()
+                if success:
+                    processed_count += 1
+                    logger.info(f"✅ Processed weekday payout for investment {investment.id} (User: {user.username})")
+                else:
+                    logger.warning(f"⚠️ Failed to process payout for investment {investment.id}")
+                    break  # Stop if we hit an error
+
         except Exception as e:
-            logger.error(f"Auto-payout error for investment {investment.id}: {str(e)}")
-    
+            logger.error(f"❌ Auto-payout error for investment {investment.id}: {str(e)}", exc_info=True)
+
     if processed_count > 0:
-        logger.info(f"Processed {processed_count} catch-up payouts for user {user.username}")
-    
+        logger.info(f"📊 Processed {processed_count} weekday payouts for user {user.username}")
+
     return processed_count
 
 
 def calculate_missed_payouts(investment, current_time):
     """
-    Calculate how many payouts are due for an investment based on 24-hour cycles
-    Returns integer number of payouts that should have been processed
+    Calculate how many payouts are due based on business days only
+    Only counts Monday-Friday as eligible payout days
+
+    This is used for admin catch-up and reporting.
+    Returns integer number of payouts that should have been processed.
     """
     from datetime import timedelta
-    
+
     # Don't calculate if investment is not active
     if investment.status != 'ACTIVE' or investment.remaining_payouts <= 0:
         return 0
-    
+
     # Base reference time for calculations
     if not investment.last_payout_date:
         # No payouts yet - base is creation time
@@ -133,24 +350,22 @@ def calculate_missed_payouts(investment, current_time):
         reference_time = investment.last_payout_date
         # Count how many payouts have been done
         payouts_done = investment.token.return_days - investment.remaining_payouts
-    
-    # Calculate hours since reference time
-    hours_since_ref = (current_time - reference_time).total_seconds() / 3600
-    
-    # Calculate how many 24-hour cycles have passed
-    cycles_passed = math.floor(hours_since_ref / 24)
-    
-    # Calculate maximum possible payouts from start until now
-    total_possible_payouts = math.floor(
-        (current_time - investment.created_at).total_seconds() / (24 * 3600)
-    )
-    
-    # Payouts that should have been done = total_possible - payouts_done
-    expected_payouts = total_possible_payouts - payouts_done
-    
+
+    # Count business days between reference and current time
+    business_days_passed = count_business_days(reference_time, current_time)
+
+    # Calculate total possible business days since investment started
+    total_business_days_possible = count_business_days(investment.created_at, current_time)
+
+    # Expected payouts = business days passed since last payout
+    expected_payouts = business_days_passed
+
+    # Calculate how many payouts should have been processed in total
+    total_expected = total_business_days_possible - payouts_done
+
     # Don't exceed remaining_payouts
     due_payouts = min(expected_payouts, investment.remaining_payouts)
-    
+
     # Log for debugging
     if due_payouts > 0:
         logger.debug(f"""
@@ -158,34 +373,41 @@ def calculate_missed_payouts(investment, current_time):
             - Created: {investment.created_at}
             - Last payout: {investment.last_payout_date}
             - Current time: {current_time}
-            - Hours since ref: {hours_since_ref}
-            - Cycles passed: {cycles_passed}
-            - Total possible: {total_possible_payouts}
+            - Business days passed: {business_days_passed}
             - Payouts done: {payouts_done}
             - Expected: {expected_payouts}
+            - Total expected: {total_expected}
             - Due now: {due_payouts}
         """)
-    
+
     return due_payouts
 
 
 def catch_up_all_users_payouts():
     """
     Admin function to catch up payouts for ALL users
-    Run this once to fix all historical payouts
+    Only processes on weekdays
+
+    This is called by the admin catch-up view.
     """
     from django.contrib.auth.models import User
-    from django.db.models import Q
-    
+
+    now = timezone.now()
+
+    # ===== WEEKEND CHECK =====
+    if is_weekend(now):
+        logger.info(f"Weekend detected - Catch-up payouts paused")
+        return 0, 0
+
     total_processed = 0
     users_processed = 0
-    
+
     # Get all users with active investments
     users_with_investments = User.objects.filter(
         investments__status='ACTIVE',
         investments__remaining_payouts__gt=0
     ).distinct()
-    
+
     for user in users_with_investments:
         try:
             processed = check_user_payouts(user)
@@ -195,10 +417,9 @@ def catch_up_all_users_payouts():
                 logger.info(f"Caught up {processed} payouts for user {user.username}")
         except Exception as e:
             logger.error(f"Error catching up payouts for user {user.username}: {str(e)}")
-    
+
     logger.info(f"Complete catch-up finished: {total_processed} payouts for {users_processed} users")
     return total_processed, users_processed
-
 
 # ==================== ADMIN VIEW FOR CATCH-UP ====================
 
@@ -536,12 +757,11 @@ def signup_with_ref(request):
 @login_required(login_url='XMR:signupin')
 def account(request):
     """Consolidated user account dashboard with all features"""
-    
-    # ===== AUTO PAYOUT CHECK =====
-    # Check and process any due payouts when user visits their account
+
+    global profile
     check_user_payouts(request.user)
     # =============================
-    
+
     try:
         profile = request.user.profile
         wallet = request.user.wallet
@@ -554,50 +774,50 @@ def account(request):
         wallet = Wallet.objects.create(user=request.user)
     except Wallet.DoesNotExist:
         wallet = Wallet.objects.create(user=request.user)
-    
+
     # Get user's deposits
     deposits = MpesaPayment.objects.filter(
         user=request.user
     ).order_by('-created_at')[:20]
-    
+
     # Get user's withdrawals
     withdrawals = WithdrawalRequest.objects.filter(
         user=request.user
     ).order_by('-created_at')[:20]
-    
+
     # Get user's transactions
     transactions = Transaction.objects.filter(
         wallet=wallet
     ).select_related('investment', 'withdrawal').order_by('-created_at')[:30]
-    
+
     # Get user's active investments (status = ACTIVE)
     active_investments = Investment.objects.filter(
         user=request.user,
         status='ACTIVE'
     ).select_related('token').order_by('-created_at')
-    
+
     # Get user's completed investments (for history)
     completed_investments = Investment.objects.filter(
         user=request.user,
         status='COMPLETED'
     ).select_related('token').order_by('-created_at')[:20]
-    
+
     # Get all investments (including both active and completed)
     all_investments = Investment.objects.filter(
         user=request.user
     ).select_related('token').order_by('-created_at')[:50]
-    
+
     # Get pending counts
     pending_deposits = MpesaPayment.objects.filter(
         user=request.user,
         status='PENDING'
     ).count()
-    
+
     pending_withdrawals = WithdrawalRequest.objects.filter(
         user=request.user,
         status='PENDING'
     ).count()
-    
+
     # Calculate dashboard stats
     total_invested = active_investments.aggregate(total=Sum('amount'))['total'] or 0
     total_earned = Transaction.objects.filter(
@@ -605,26 +825,48 @@ def account(request):
         transaction_type='PROFIT',
         status='COMPLETED'
     ).aggregate(total=Sum('amount'))['total'] or 0
-    
-    # Get next payout (soonest ending investment)
+
+    # ===== FIXED: Get next payout with BUSINESS DAYS =====
     next_payout = active_investments.order_by('end_date').first()
-    
-    # Calculate next payout days left
+
     if next_payout:
-        days_left = (next_payout.end_date - timezone.now()).days
-        if days_left < 0:
-            days_left = 0
+        # Use the investment's business days remaining method
+        business_days_remaining = next_payout.get_business_days_remaining()
+        days_left = business_days_remaining
+
+        # Get next payout date (always a weekday)
+        next_payout_date = next_payout.get_next_payout_date()
+        next_payout_display = next_payout_date.strftime('%A, %B %d, %Y')
+
+        # Calculate hours until next payout
+        now = timezone.now()
+        hours_until = (next_payout_date - now).total_seconds() / 3600
+
+        if hours_until < 1:
+            next_payout_time = f"{int(hours_until * 60)} minutes"
+        elif hours_until < 24:
+            next_payout_time = f"{int(hours_until)} hours"
+        else:
+            next_payout_time = f"{int(hours_until / 24)} days"
     else:
         days_left = 0
-    
+        next_payout_display = "No active investments"
+        next_payout_time = "N/A"
+
+    # ===== FIXED: Calculate total daily return (only active investments with remaining payouts) =====
+    total_daily_return = 0
+    for investment in active_investments:
+        if investment.remaining_payouts > 0:
+            total_daily_return += investment.daily_return
+
     # Get referral data
     referrals = UserProfile.objects.filter(
         referred_by=profile
     ).select_related('user').order_by('-created_at')
-    
+
     referral_data = []
     total_referral_earnings = Decimal('0')
-    
+
     for ref in referrals:
         # Get first deposit
         first_deposit = Transaction.objects.filter(
@@ -632,36 +874,36 @@ def account(request):
             transaction_type='DEPOSIT',
             status='COMPLETED'
         ).order_by('created_at').first()
-        
+
         first_deposit_amount = first_deposit.amount if first_deposit else 0
-        
+
         # Get bonus earned from this referral
         bonus = Transaction.objects.filter(
             wallet=wallet,
             transaction_type='REFERRAL_BONUS',
             description__icontains=ref.user.username
         ).aggregate(total=Sum('amount'))['total'] or 0
-        
+
         total_referral_earnings += bonus
-        
+
         referral_data.append({
             'user': ref.user,
             'created_at': ref.created_at,
             'first_deposit': first_deposit_amount,
             'bonus_earned': bonus,
-            'is_active': ref.user.last_login and 
-                        ref.user.last_login > timezone.now() - timedelta(days=30)
+            'is_active': ref.user.last_login and
+                         ref.user.last_login > timezone.now() - timedelta(days=30)
         })
-    
+
     # Get payment instructions from system config
-    paybill = SystemConfig.get_config('mpesa_paybill', '123456')
+    paybill = SystemConfig.get_config('mpesa_paybill', '345678')
     account_no = SystemConfig.get_config('mpesa_account', request.user.username)
-    min_deposit = SystemConfig.get_config('min_deposit', 800)
-    min_withdrawal = SystemConfig.get_config('min_withdrawal', 200)
-    
+    min_deposit = SystemConfig.get_config('min_deposit', 1200)
+    min_withdrawal = SystemConfig.get_config('min_withdrawal', 500)
+
     # Current date for greeting
     current_date = timezone.now()
-    
+
     # Get greeting based on time
     hour = timezone.now().hour
     if hour < 12:
@@ -670,7 +912,49 @@ def account(request):
         greeting = "Afternoon"
     else:
         greeting = "Evening"
-    
+
+    # ===== WITHDRAWAL WINDOW STATUS =====
+    withdrawal_status = get_withdrawal_window_status()
+    is_withdrawal_open = withdrawal_status['open']
+
+    # ===== PAYOUT SCHEDULE INFO =====
+    now = timezone.now()
+    is_weekday_now = is_weekday(now)
+    is_weekend_now = is_weekend(now)
+
+    # Calculate next payout day (next weekday)
+    if is_weekend_now:
+        next_business_day = get_next_business_day(now)
+        next_payout_day_display = next_business_day.strftime('%A, %B %d, %Y')
+        payout_status = 'paused'
+        payout_message = f'Weekend - No payouts today. Next payout: {next_payout_day_display}'
+    else:
+        next_payout_day_display = now.strftime('%A, %B %d, %Y')
+        payout_status = 'active'
+        payout_message = f'Today is a payout day ({now.strftime("%A")})'
+
+    # Get next withdrawal window
+    if is_weekend_now:
+        if is_withdrawal_open:
+            next_withdrawal_window = 'Open now!'
+            next_withdrawal_status = 'open'
+        else:
+            if now.time() < time(8, 0):
+                next_withdrawal_window = 'Today at 8:00 AM'
+                next_withdrawal_status = 'opens_today'
+            else:
+                next_withdrawal_window = 'Next weekend'
+                next_withdrawal_status = 'closed_today'
+    else:
+        days_until_saturday = 5 - now.weekday()
+        if days_until_saturday <= 0:
+            next_withdrawal_window = 'Tomorrow (Saturday)'
+        elif days_until_saturday == 1:
+            next_withdrawal_window = 'Tomorrow (Saturday)'
+        else:
+            next_withdrawal_window = f'In {days_until_saturday} days (Saturday)'
+        next_withdrawal_status = 'weekday'
+
     context = {
         # User and profile
         'user': request.user,
@@ -679,18 +963,18 @@ def account(request):
         'available_balance': wallet.available_balance(),
         'locked_balance': wallet.locked_balance,
         'total_balance': wallet.balance + wallet.locked_balance,
-        
+
         # Stats
         'total_invested': total_invested,
         'total_earned': total_earned,
         'total_referral_earnings': total_referral_earnings,
         'total_referrals': referrals.count(),
         'active_referrals': sum(1 for r in referral_data if r['is_active']),
-        
+
         # Pending counts
         'pending_deposits': pending_deposits,
         'pending_withdrawals': pending_withdrawals,
-        
+
         # Lists
         'deposits': deposits,
         'withdrawals': withdrawals,
@@ -699,37 +983,63 @@ def account(request):
         'completed_investments': completed_investments,
         'all_investments': all_investments,
         'referrals': referral_data,
-        
-        # Next payout
+
+        # ===== FIXED: Next payout with business days =====
         'next_payout': next_payout,
         'days_left': days_left,
-        
+        'next_payout_display': next_payout_display,
+        'next_payout_time': next_payout_time,
+
+        # ===== FIXED: Daily returns =====
+        'total_daily_return': total_daily_return,
+
         # Payment configs
         'paybill': paybill,
         'account_no': account_no,
         'min_deposit': min_deposit,
         'min_withdrawal': min_withdrawal,
-        
+
         # Verification status
         'phone_verified': profile.phone_verified,
         'id_verified': profile.id_verified,
-        
+
         # Current date and greeting
         'current_date': current_date,
         'greeting': greeting,
+
+        # ===== SCHEDULE INFORMATION =====
+        # Withdrawal window
+        'withdrawal_window': withdrawal_status,
+        'is_withdrawal_open': is_withdrawal_open,
+        'withdrawal_status_message': withdrawal_status['message'],
+        'withdrawal_opens_at': withdrawal_status.get('opens_at', '8:00 AM'),
+        'withdrawal_closes_at': withdrawal_status.get('closes_at', '5:00 PM'),
+
+        # Payout schedule
+        'is_weekday': is_weekday_now,
+        'is_weekend': is_weekend_now,
+        'payout_status': payout_status,
+        'payout_message': payout_message,
+        'next_payout_day': next_payout_day_display,
+        'payout_schedule': 'Monday - Friday (Weekdays only)',
+        'withdrawal_schedule': 'Saturday - Sunday, 8:00 AM - 5:00 PM',
+
+        # Next withdrawal
+        'next_withdrawal_window': next_withdrawal_window,
+        'next_withdrawal_status': next_withdrawal_status,
     }
-    
+
     # Handle POST requests for profile updates, password changes, KYC uploads
     if request.method == 'POST':
         action = request.POST.get('action')
-        
+
         if action == 'update_profile':
             return handle_profile_update(request, profile)
         elif action == 'change_password':
             return handle_password_change(request)
         elif action == 'upload_kyc':
             return handle_kyc_upload(request, profile)
-    
+
     return render(request, 'account.html', context)
 
 
@@ -823,7 +1133,7 @@ def create_deposit(request):
     # Validate amount
     try:
         amount = Decimal(amount)
-        min_deposit = SystemConfig.get_config('min_deposit', 800)
+        min_deposit = SystemConfig.get_config('min_deposit', 1200)
         if amount < min_deposit:
             messages.error(request, f'Minimum deposit is {min_deposit} KSH')
             return redirect('XMR:account')
@@ -874,41 +1184,71 @@ def create_deposit(request):
 
 
 # ==================== WITHDRAWAL VIEWS ====================
-
 @login_required(login_url='XMR:signupin')
 def create_withdrawal(request):
-    """Create a new withdrawal request - ONLY affects available balance"""
+    """
+    Create a new withdrawal request
+    ONLY allowed on weekends (Saturday-Sunday) between 8 AM - 5 PM
+    """
     if request.method != 'POST':
         return redirect('XMR:account')
-    
+
+    # ===== WITHDRAWAL WINDOW CHECK =====
+    is_open, message = is_withdrawal_window()
+
+    if not is_open:
+        # Get detailed status for better error message
+        status = get_withdrawal_window_status()
+        error_message = f"""
+        ❌ Withdrawals are only available on weekends (Saturday-Sunday) from 8:00 AM to 5:00 PM.
+
+        Current Status: {status['status']}
+        {status['message']}
+
+        Window Hours: {status['opens_at']} - {status['closes_at']}
+        """
+        messages.error(request, error_message)
+
+        # Log the attempt
+        SystemLog.objects.create(
+            log_type='WARNING',
+            user=request.user,
+            action='WITHDRAWAL_ATTEMPT_OUTSIDE_WINDOW',
+            description=f'Withdrawal attempt outside window: {status["status"]}',
+            ip_address=get_client_ip(request)
+        )
+
+        return redirect('XMR:account')
+
+    # ===== CONTINUE WITH EXISTING WITHDRAWAL LOGIC =====
     amount = request.POST.get('amount')
     payment_method = request.POST.get('payment_method', 'MPESA')
     phone_number = request.POST.get('phone_number', '').strip()
     bank_details = request.POST.get('bank_details', '').strip()
-    
+
     wallet = request.user.wallet
-    
+
     # Validate amount
     try:
         amount = Decimal(amount)
-        min_withdrawal = SystemConfig.get_config('min_withdrawal', 200)
-        
+        min_withdrawal = SystemConfig.get_config('min_withdrawal', 500)
+
         if amount < min_withdrawal:
             messages.error(request, f'Minimum withdrawal is {min_withdrawal} KSH')
             return redirect('XMR:account')
-        
+
         # CHECK AVAILABLE BALANCE ONLY (balance field)
         if wallet.balance < amount:
             messages.error(
-                request, 
+                request,
                 f'Insufficient available balance. You have {wallet.balance} KSH available, but requested {amount} KSH.'
             )
             return redirect('XMR:account')
-            
+
     except (TypeError, ValueError, InvalidOperation):
         messages.error(request, 'Invalid amount')
         return redirect('XMR:account')
-    
+
     # Validate based on payment method
     if payment_method == 'MPESA':
         phone_number = clean_phone_number(phone_number)
@@ -919,7 +1259,7 @@ def create_withdrawal(request):
         if not bank_details:
             messages.error(request, 'Please provide bank account details')
             return redirect('XMR:account')
-    
+
     try:
         # Create withdrawal request
         withdrawal = WithdrawalRequest.objects.create(
@@ -929,28 +1269,26 @@ def create_withdrawal(request):
             phone_number=phone_number if payment_method == 'MPESA' else None,
             bank_details=bank_details if payment_method == 'BANK' else None
         )
-        
-        # NOTE: WithdrawalRequest.save() no longer locks the amount
-        # It just checks available balance but doesn't modify it
-        
-        messages.success(request, f'Withdrawal request for {amount} KSH submitted successfully! It will be processed by admin.')
-        
+
+        messages.success(request,
+                         f'✅ Withdrawal request for {amount} KSH submitted successfully! It will be processed by admin.')
+
         # Log the withdrawal request
         SystemLog.objects.create(
             log_type='INFO',
             user=request.user,
             action='WITHDRAWAL_CREATED',
-            description=f'Withdrawal request for {amount} KSH created'
+            description=f'Withdrawal request for {amount} KSH created (Weekend window)',
+            ip_address=get_client_ip(request)
         )
-        
+
     except ValidationError as e:
         messages.error(request, str(e))
     except Exception as e:
         messages.error(request, f'Error creating withdrawal: {str(e)}')
         logger.error(f"Withdrawal creation error: {str(e)}", exc_info=True)
-    
-    return HttpResponseRedirect('/account/?tab=withdrawals')
 
+    return HttpResponseRedirect('/account/?tab=withdrawals')
 
 @login_required(login_url='XMR:signupin')
 def cancel_withdrawal(request, withdrawal_id):
@@ -979,31 +1317,29 @@ def cancel_withdrawal(request, withdrawal_id):
 
 
 # ==================== INVESTMENT VIEWS ====================
-
 @login_required(login_url='XMR:signupin')
 def investments(request):
-    """View all available investments"""
-    
+    """View all available investments with payout schedule information"""
+
     # ===== AUTO PAYOUT CHECK =====
-    # Check and process any due payouts when user visits investments page
     check_user_payouts(request.user)
     # =============================
-    
+
     # Get active tokens
     active_tokens = Token.objects.filter(status='ACTIVE').order_by('token_number')
-    
+
     # Get user's investments
     user_investments_all = Investment.objects.filter(
         user=request.user
     ).select_related('token').order_by('-created_at')
-    
+
     # Separate active and completed for display
     active_investments = user_investments_all.filter(status='ACTIVE')
     completed_investments = user_investments_all.filter(status='COMPLETED')
-    
+
     # Get wallet for balance check
     wallet = request.user.wallet
-    
+
     # Calculate totals
     total_invested = active_investments.aggregate(total=Sum('amount'))['total'] or 0
     total_earned = Transaction.objects.filter(
@@ -1011,24 +1347,134 @@ def investments(request):
         transaction_type='PROFIT',
         status='COMPLETED'
     ).aggregate(total=Sum('amount'))['total'] or 0
-    
-    # Get next payout days
+
+    # ===== FIXED: Get next payout info =====
     next_payout = active_investments.order_by('end_date').first()
-    next_payout_days = 0
+
     if next_payout:
-        next_payout_days = (next_payout.end_date - timezone.now()).days
-        if next_payout_days < 0:
-            next_payout_days = 0
-    
-    # Get user's purchase history for each token (for max purchase limits)
+        # Calculate business days remaining (NOT calendar days)
+        business_days_remaining = next_payout.get_business_days_remaining()
+        next_payout_days = business_days_remaining
+
+        # Get next payout date (always a weekday)
+        next_payout_date = next_payout.get_next_payout_date()
+        next_payout_display = next_payout_date.strftime('%A, %B %d, %Y')
+
+        # Calculate hours until next payout
+        now = timezone.now()
+        hours_until = (next_payout_date - now).total_seconds() / 3600
+
+        if hours_until < 24:
+            next_payout_hours = f"{int(hours_until)} hours"
+        else:
+            next_payout_hours = f"{int(hours_until / 24)} days"
+    else:
+        next_payout_days = 0
+        next_payout_display = "No active investments"
+        next_payout_hours = "N/A"
+
+    # Get user's purchase history for each token
     user_token_purchases = {}
     for token in active_tokens:
         user_token_purchases[token.id] = Investment.objects.filter(
             user=request.user,
             token=token
         ).count()
-    
+
+    # ===== SCHEDULE INFORMATION =====
+    now = timezone.now()
+    is_weekday_now = is_weekday(now)
+    is_weekend_now = is_weekend(now)
+
+    # Calculate payout schedule info
+    if is_weekend_now:
+        next_business_day = get_next_business_day(now)
+        next_payout_display = next_business_day.strftime('%A, %B %d, %Y')
+        payout_status = 'paused'
+        payout_status_badge = 'warning'
+        payout_icon = 'fa-pause-circle'
+        payout_message = f'Weekend - No payouts today. Next payout: {next_payout_display}'
+        payout_day_name = now.strftime('%A')
+    else:
+        next_payout_display = now.strftime('%A, %B %d, %Y')
+        payout_status = 'active'
+        payout_status_badge = 'success'
+        payout_icon = 'fa-check-circle'
+        payout_message = f'Today is a payout day ({now.strftime("%A")})'
+        payout_day_name = now.strftime('%A')
+
+    # Get withdrawal window status
+    withdrawal_status = get_withdrawal_window_status()
+    is_withdrawal_open = withdrawal_status['open']
+
+    # Calculate next withdrawal window
+    if is_weekend_now:
+        if is_withdrawal_open:
+            next_withdrawal_window = 'Open now!'
+            next_withdrawal_status = 'open'
+            next_withdrawal_badge = 'success'
+        else:
+            if now.time() < time(8, 0):
+                next_withdrawal_window = f'Today at 8:00 AM'
+                next_withdrawal_status = 'opens_today'
+                next_withdrawal_badge = 'info'
+            else:
+                next_withdrawal_window = 'Next weekend'
+                next_withdrawal_status = 'closed'
+                next_withdrawal_badge = 'secondary'
+    else:
+        days_until_saturday = 5 - now.weekday()
+        if days_until_saturday == 1:
+            next_withdrawal_window = 'Tomorrow (Saturday)'
+        elif days_until_saturday == 0:
+            next_withdrawal_window = 'Today (Saturday)'
+        elif days_until_saturday == 2:
+            next_withdrawal_window = 'In 2 days (Saturday)'
+        else:
+            next_withdrawal_window = f'In {days_until_saturday} days (Saturday)'
+        next_withdrawal_status = 'weekday'
+        next_withdrawal_badge = 'secondary'
+
+    # ===== EARNING PROJECTIONS =====
+    projected_earnings = 0
+    for investment in active_investments:
+        if investment.remaining_payouts > 0:
+            projected_earnings += investment.daily_return
+
+    # Calculate if any investments are due for payout today (weekday check)
+    investments_due_today = 0
+    if is_weekday_now:
+        investments_due_today = active_investments.filter(
+            remaining_payouts__gt=0
+        ).count()
+
+    # ===== GET PAYOUT HISTORY SUMMARY =====
+    last_7_days = now - timedelta(days=7)
+    payout_history = Transaction.objects.filter(
+        wallet=wallet,
+        transaction_type='PROFIT',
+        status='COMPLETED',
+        created_at__gte=last_7_days
+    ).count()
+
+    total_payout_count = Transaction.objects.filter(
+        wallet=wallet,
+        transaction_type='PROFIT',
+        status='COMPLETED'
+    ).count()
+
+    # ===== BUSINESS DAY COUNT =====
+    account_created = request.user.date_joined
+    business_days_since_joined = count_business_days(account_created, now)
+
+    # ===== CALCULATE TOTAL DAILY RETURN =====
+    total_daily_return = 0
+    for investment in active_investments:
+        if investment.remaining_payouts > 0:
+            total_daily_return += investment.daily_return
+
     context = {
+        # Original context variables
         'active_tokens': active_tokens,
         'active_investments': active_investments,
         'completed_investments': completed_investments,
@@ -1039,9 +1485,47 @@ def investments(request):
         'total_balance': wallet.balance + wallet.locked_balance,
         'total_invested': total_invested,
         'total_earned': total_earned,
-        'next_payout_days': next_payout_days,
+        'next_payout_days': next_payout_days,  # Business days remaining
+        'next_payout_hours': next_payout_hours,
+        'next_payout_date_display': next_payout_display,
         'user_token_purchases': user_token_purchases,
+
+        # ===== SCHEDULE INFORMATION =====
+        'is_weekday': is_weekday_now,
+        'is_weekend': is_weekend_now,
+        'payout_status': payout_status,
+        'payout_status_badge': payout_status_badge,
+        'payout_icon': payout_icon,
+        'payout_message': payout_message,
+        'payout_day_name': payout_day_name,
+        'next_payout_day': next_payout_display,
+        'payout_schedule': 'Monday - Friday (Weekdays only)',
+        'payout_weekend_note': 'Weekends are paused - earnings resume on Monday',
+
+        # Withdrawal schedule
+        'withdrawal_window': withdrawal_status,
+        'is_withdrawal_open': is_withdrawal_open,
+        'withdrawal_status_message': withdrawal_status['message'],
+        'withdrawal_schedule': 'Saturday - Sunday, 8:00 AM - 5:00 PM',
+        'withdrawal_opens_at': withdrawal_status.get('opens_at', '8:00 AM'),
+        'withdrawal_closes_at': withdrawal_status.get('closes_at', '5:00 PM'),
+        'next_withdrawal_window': next_withdrawal_window,
+        'next_withdrawal_status': next_withdrawal_status,
+        'next_withdrawal_badge': next_withdrawal_badge,
+
+        # Earning projections
+        'projected_earnings': projected_earnings,
+        'investments_due_today': investments_due_today,
+        'payout_history': payout_history,
+        'total_payout_count': total_payout_count,
+        'business_days_since_joined': business_days_since_joined,
+        'total_daily_return': total_daily_return,
+
+        # Helpful messages
+        'payout_help_text': 'Daily earnings are processed on business days (Monday-Friday). Weekends are automatically paused.',
+        'withdrawal_help_text': 'Withdrawals are only available on weekends (Saturday-Sunday) from 8:00 AM to 5:00 PM.',
     }
+
     return render(request, 'investments.html', context)
 
 
@@ -1491,8 +1975,8 @@ def myadmin(request):
     configs = {c.key: c.value for c in SystemConfig.objects.all()}
     
     default_configs = {
-        'min_deposit': 800,
-        'min_withdrawal': 200,
+        'min_deposit': 1200,
+        'min_withdrawal': 500,
         'withdrawal_tax': 5,
         'referral_commission': 5,
         'mpesa_paybill': '123456',
@@ -1698,8 +2182,8 @@ def admin_api(request):
     elif action == 'adjust_balance':
         user_id = request.POST.get('user_id')
         amount = request.POST.get('amount')
-        description = request.POST.get('description', 'Admin adjustment')
-        adjust_type = request.POST.get('adjust_type', 'add')  # 'add' or 'subtract'
+        description = request.POST.get('description', 'Deposit')
+        adjust_type = request.POST.get('adjust_type', 'add')
         
         try:
             amount = Decimal(amount)
@@ -2106,38 +2590,69 @@ def validate_phone_number(phone):
 
 
 # ==================== CRON JOBS / MANAGEMENT COMMANDS ====================
-
 def process_daily_payouts():
-    """Process daily payouts for all active investments"""
-    print(f"{timezone.now()}: Starting daily payout processing...")
-    
-    active_investments = Investment.objects.filter(status='ACTIVE')
-    
+    """
+    Process daily payouts for all active investments
+    ONLY runs on weekdays (Monday-Friday)
+
+    This is called by the cron job or admin trigger.
+    """
+    now = timezone.now()
+
+    # ===== WEEKEND CHECK =====
+    if is_weekend(now):
+        print(f"{now.strftime('%A, %B %d, %Y')}: Weekend detected - Payouts paused")
+        logger.info(f"Weekend detected ({now.strftime('%A')}) - Daily payouts paused")
+
+        SystemLog.objects.create(
+            log_type='INFO',
+            action='PAYOUT_PAUSED',
+            description=f'Payouts paused - Weekend ({now.strftime("%A")})',
+        )
+        return 0, 0
+
+    print(f"{now}: Starting daily payout processing...")
+    logger.info(f"Starting daily payout processing for {now.strftime('%A')}")
+
+    active_investments = Investment.objects.filter(
+        status='ACTIVE',
+        remaining_payouts__gt=0
+    )
+
     processed = 0
     errors = 0
-    
+
     for investment in active_investments:
         try:
-            if investment.remaining_payouts > 0:
-                investment.process_daily_payout()
-                processed += 1
-                
-                if processed % 100 == 0:
-                    print(f"Processed {processed} investments...")
-                    
+            # Check if enough business days have passed
+            reference_time = investment.last_payout_date or investment.created_at
+            business_days_passed = count_business_days(reference_time, now)
+
+            # Only process if at least one business day has passed
+            if business_days_passed >= 1:
+                success = investment.process_daily_payout()
+                if success:
+                    processed += 1
+                    if processed % 100 == 0:
+                        print(f"Processed {processed} investments...")
+                else:
+                    errors += 1
+                    logger.warning(f"Failed to process payout for investment {investment.id}")
+
         except Exception as e:
             errors += 1
             print(f"Error processing investment {investment.id}: {str(e)}")
             logger.error(f"Daily payout error for investment {investment.id}: {str(e)}", exc_info=True)
-    
+
     print(f"Completed: {processed} payouts processed, {errors} errors")
-    
+    logger.info(f"Daily payouts completed - Processed: {processed}, Errors: {errors}")
+
     SystemLog.objects.create(
         log_type='INFO',
         action='DAILY_PAYOUT',
         description=f'Daily payouts completed. Processed: {processed}, Errors: {errors}',
     )
-    
+
     return processed, errors
 
 
@@ -2713,7 +3228,7 @@ def export_transactions_csv(request):
     
     transactions = Transaction.objects.select_related(
         'wallet__user', 'processed_by'
-    ).order_by('-created_at')[:5000]  # Limit to last 5000 for performance
+    ).order_by('-created_at')[:5000]
     
     for t in transactions:
         writer.writerow([
@@ -2956,7 +3471,7 @@ def initialize_system(request):
                 'name': 'XMR-1',
                 'display_name': 'Starter',
                 'token_number': 1,
-                'minimum_investment': 800,
+                'minimum_investment': 1200,
                 'daily_return': 100,
                 'return_days': 12,
                 'status': 'ACTIVE',
@@ -3013,11 +3528,11 @@ def initialize_system(request):
         
         # Create default system configs
         default_configs = {
-            'min_deposit': 800,
-            'min_withdrawal': 200,
+            'min_deposit': 1200,
+            'min_withdrawal': 500,
             'withdrawal_tax': 5,
             'referral_commission': 5,
-            'mpesa_paybill': '123456',
+            'mpesa_paybill': '2345678',
             'mpesa_account': 'INVEST',
             'site_name': 'XMR Investments',
             'support_email': 'support@example.com',
@@ -4846,7 +5361,7 @@ def handle_export_room_data(request, room):
         data['recent_messages'] = [
             {
                 'user': msg.user.username if msg.user else 'System',
-                'content': msg.content[:200],  # Truncate for export
+                'content': msg.content[:200],
                 'created_at': msg.created_at.isoformat(),
                 'type': msg.message_type,
             }
@@ -5625,11 +6140,6 @@ def chat_room_messages(request, room_slug):
     except ChatRoom.DoesNotExist:
         return JsonResponse({'error': 'Room not found'}, status=404)
 
-
-# =============================================================================
-# UTILITY FUNCTIONS
-# =============================================================================
-
 def get_peak_hours(room):
     """Get peak activity hours (cached)"""
     cache_key = f"peak_hours:{room.id}"
@@ -6058,14 +6568,12 @@ def chat_room_join(request, room_slug):
             messages.success(request, f'✅ You have joined {room.name}')
             return redirect('XMR:chat_room_detail', room_slug=room.slug)
     
-    # Simple password entry page
+
     context = {
         'room': room,
         'mode': 'join'
     }
     return render(request, 'chat.html', context)
-
-
 
 
 from django.conf import settings
