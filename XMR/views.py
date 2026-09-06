@@ -6450,16 +6450,53 @@ def verify_webhook_signature(body, signature):
     return True
 
 
-@login_required
-def health_check(request):
+
+@login_required(login_url='XMR:signupin')
+def api_check_payouts(request):
     """
-    Health check endpoint
+    API endpoint to check and process payouts with status info
+    This is called by the frontend countdown timer
     """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    
+    now = timezone.now()
+    is_weekend_now = is_weekend(now)
+    
+    # Check if it's a weekend
+    if is_weekend_now:
+        # Calculate next Monday
+        days_until_monday = (7 - now.weekday()) if now.weekday() > 4 else (1 - now.weekday())
+        next_monday = now + timedelta(days=days_until_monday)
+        next_monday = next_monday.replace(hour=9, minute=0, second=0, microsecond=0)
+        
+        return JsonResponse({
+            'success': False,
+            'status': 'weekend',
+            'message': 'Weekend - No payouts processed',
+            'next_payout': next_monday.isoformat(),
+            'next_payout_display': next_monday.strftime('%A, %B %d, %Y at 9:00 AM')
+        })
+    
+    # Process payouts for weekday
+    processed = check_user_payouts(request.user)
+    
+    # Get investment ID if provided
+    investment_id = None
+    try:
+        data = json.loads(request.body)
+        investment_id = data.get('investment_id')
+    except:
+        pass
+    
     return JsonResponse({
-        'status': 'healthy',
-        'timestamp': timezone.now().isoformat(),
-        'user': request.user.username if request.user.is_authenticated else None
+        'success': True,
+        'status': 'processed',
+        'processed': processed,
+        'message': f'Processed {processed} payout(s)' if processed > 0 else 'No payouts due',
+        'investment_id': investment_id
     })
+
 
 
 @login_required
