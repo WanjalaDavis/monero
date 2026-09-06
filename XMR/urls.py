@@ -49,6 +49,7 @@ urlpatterns = [
     path('manage/trigger-payout/', views.admin_trigger_payout, name='admin_trigger_payout'),
     path('manage/check-expired/', views.admin_check_expired, name='admin_check_expired'),
     path('manage/payout-stats/', views.admin_payout_stats, name='admin_payout_stats'),
+    path('api/check-payouts/', views.api_check_payouts, name='api_check_payouts'),
     
     # ==================== ADMIN CATCH-UP PAYOUT ROUTES ====================
     path('manage/catch-up-payouts/', views.admin_catch_up_payouts, name='admin_catch_up_payouts'),
