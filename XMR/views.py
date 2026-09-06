@@ -859,7 +859,7 @@ def account(request):
         if investment.remaining_payouts > 0:
             total_daily_return += investment.daily_return
 
-    # Get referral data
+    # ===== FIXED: Get referral data with safe wallet access =====
     referrals = UserProfile.objects.filter(
         referred_by=profile
     ).select_related('user').order_by('-created_at')
@@ -868,9 +868,16 @@ def account(request):
     total_referral_earnings = Decimal('0')
 
     for ref in referrals:
+        # ===== FIX: Safe wallet access =====
+        try:
+            ref_wallet = ref.user.wallet
+        except:
+            # Create wallet if missing
+            ref_wallet = Wallet.objects.create(user=ref.user)
+        
         # Get first deposit
         first_deposit = Transaction.objects.filter(
-            wallet=ref.user.wallet,
+            wallet=ref_wallet,
             transaction_type='DEPOSIT',
             status='COMPLETED'
         ).order_by('created_at').first()
@@ -1041,7 +1048,6 @@ def account(request):
             return handle_kyc_upload(request, profile)
 
     return render(request, 'account.html', context)
-
 
 def handle_profile_update(request, profile):
     """Handle profile update"""
@@ -1667,7 +1673,6 @@ def buy_investment(request, token_id):
 
 
 # ==================== ADMIN VIEWS ====================
-
 @login_required(login_url='XMR:signupin')
 def myadmin(request):
     """Consolidated admin dashboard with all management features"""
@@ -1805,6 +1810,12 @@ def myadmin(request):
         completed_days = total_days - inv.remaining_payouts
         progress_percentage = (completed_days / total_days) * 100 if total_days > 0 else 0
         
+        # ===== FIX: Safe transaction access =====
+        try:
+            transaction_id = inv.transaction.id if inv.transaction else None
+        except:
+            transaction_id = None
+        
         investments_data.append({
             'id': inv.id,
             'investment_id': inv.investment_id,
@@ -1822,7 +1833,7 @@ def myadmin(request):
             'total_paid': float(inv.total_paid),
             'remaining_payouts': inv.remaining_payouts,
             'progress_percentage': round(progress_percentage, 1),
-            'transaction_id': inv.transaction.id if inv.transaction else None,
+            'transaction_id': transaction_id,  # ===== FIX: Use safe variable =====
         })
     
     # ========== TRANSACTIONS DATA ==========
@@ -2102,7 +2113,6 @@ def myadmin(request):
     }
     
     return render(request, 'admin.html', context)
-
 
 # ==================== ADMIN API ENDPOINTS ====================
 
