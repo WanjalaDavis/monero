@@ -909,6 +909,22 @@
             padding: 0.3rem 0.8rem;
             border-radius: 8px;
             font-size: 0.85rem;
+            display: inline-flex;
+            flex-direction: column;
+            align-items: flex-start;
+            min-width: 100px;
+        }
+
+        .countdown-timer .countdown-main {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .countdown-timer .countdown-sub {
+            font-size: 0.65rem;
+            opacity: 0.7;
+            margin-top: 0.1rem;
         }
 
         .countdown-urgent {
@@ -917,6 +933,10 @@
 
         .countdown-normal {
             color: var(--accent-success);
+        }
+
+        .countdown-paused {
+            color: var(--accent-warning);
         }
 
         .amount-positive {
@@ -1329,52 +1349,6 @@
         </div>
     </div>
 
-    <!-- Schedule Info Cards -->
-    <!-- <div class="row g-3 mb-4" data-aos="fade-up" data-aos-delay="200">
-        <div class="col-md-6">
-            <div class="card schedule-card" style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 16px;">
-                <div class="card-body">
-                    <h6 class="card-title">
-                        <i class="fa-regular fa-calendar me-2" style="color: var(--accent-primary);"></i>
-                        Payout Schedule
-                    </h6>
-                    <p class="card-text small text-muted">Monday - Friday (Weekdays only)</p>
-                    <span class="schedule-badge {% if is_weekday %}weekday{% else %}weekend{% endif %}">
-                        <i class="fa-solid {% if is_weekday %}fa-check-circle{% else %}fa-pause-circle{% endif %} me-1"></i>
-                        {% if is_weekday %}Today is a payout day{% else %}Weekend - No payouts{% endif %}
-                    </span>
-                    {% if is_weekend %}
-                        <p class="small text-muted mt-2 mb-0">
-                            <i class="fa-regular fa-clock me-1"></i>
-                            Next payout: {{ next_payout_day }}
-                        </p>
-                    {% endif %}
-                </div>
-            </div>
-        </div> -->
-        <!-- <div class="col-md-6">
-            <div class="card schedule-card" style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 16px;">
-                <div class="card-body">
-                    <h6 class="card-title">
-                        <i class="fa-solid fa-money-bill-wave me-2" style="color: var(--accent-success);"></i>
-                        Withdrawal Schedule
-                    </h6>
-                    <p class="card-text small text-muted">Saturday - Sunday, 8:00 AM - 5:00 PM</p>
-                    <span class="schedule-badge {% if is_withdrawal_open %}open{% else %}closed{% endif %}">
-                        <i class="fa-solid {% if is_withdrawal_open %}fa-check-circle{% else %}fa-clock{% endif %} me-1"></i>
-                        {% if is_withdrawal_open %}Window Open!{% else %}{{ next_withdrawal_window }}{% endif %}
-                    </span>
-                    {% if not is_withdrawal_open %}
-                        <p class="small text-muted mt-2 mb-0">
-                            <i class="fa-regular fa-clock me-1"></i>
-                            {{ withdrawal_status_message }}
-                        </p>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-    </div> -->
-
     <!-- Balance Card -->
     <div class="balance-card" data-aos="fade-up" data-aos-delay="250">
         <div class="row align-items-center">
@@ -1611,8 +1585,10 @@
                             <span class="countdown-timer {% if investment.remaining_payouts < 3 %}countdown-urgent{% else %}countdown-normal{% endif %}"
                                   data-end="{{ investment.end_date|date:'U' }}"
                                   data-last-payout="{% if investment.last_payout_date %}{{ investment.last_payout_date|date:'U' }}{% endif %}"
-                                  data-created="{{ investment.created_at|date:'U' }}">
-                                Calculating...
+                                  data-created="{{ investment.created_at|date:'U' }}"
+                                  data-investment-id="{{ investment.id }}">
+                                <span class="countdown-main">Calculating...</span>
+                                <span class="countdown-sub">loading</span>
                             </span>
                         </td>
                         <td>
@@ -1975,9 +1951,25 @@
         }
     });
 
-    // ===== COUNTDOWN TIMER =====
+    // ===== IMPROVED COUNTDOWN TIMER WITH WEEKEND DETECTION =====
     function updateCountdowns() {
         const now = Math.floor(Date.now() / 1000);
+        
+        // Get current day of week (0=Sunday, 6=Saturday)
+        const currentDay = new Date().getDay();
+        const isWeekend = currentDay === 0 || currentDay === 6;
+        
+        // Get next Monday timestamp
+        let nextMonday = null;
+        let daysUntilMonday = 0;
+        if (isWeekend) {
+            const today = new Date();
+            daysUntilMonday = (8 - today.getDay()) % 7 || 7;
+            const monday = new Date(today);
+            monday.setDate(today.getDate() + daysUntilMonday);
+            monday.setHours(9, 0, 0, 0);
+            nextMonday = Math.floor(monday.getTime() / 1000);
+        }
 
         document.querySelectorAll('.countdown-timer').forEach(timer => {
             const endDate = parseInt(timer.dataset.end);
@@ -1986,17 +1978,51 @@
 
             let nextPayout;
             if (!lastPayout || isNaN(lastPayout)) {
-                // First payout: 24 hours after creation (business day check in backend)
                 nextPayout = created + (24 * 3600);
             } else {
-                // Subsequent payouts: 24 hours after last payout
                 nextPayout = lastPayout + (24 * 3600);
             }
 
             const secondsLeft = nextPayout - now;
 
+            // ===== WEEKEND DETECTION =====
+            if (isWeekend) {
+                const hoursUntilMonday = Math.floor((nextMonday - now) / 3600);
+                const daysUntil = Math.floor(hoursUntilMonday / 24);
+                const remainingHours = hoursUntilMonday % 24;
+                
+                let timeDisplay = '';
+                if (daysUntil > 0) {
+                    timeDisplay = `${daysUntil}d ${remainingHours}h`;
+                } else {
+                    timeDisplay = `${remainingHours}h`;
+                }
+                
+                timer.innerHTML = `
+                    <span class="countdown-main countdown-paused">
+                        <i class="fa-solid fa-pause-circle me-1"></i>
+                        Weekend Paused
+                    </span>
+                    <span class="countdown-sub">
+                        <i class="fa-regular fa-clock me-1"></i>
+                        ${timeDisplay} until Monday
+                    </span>
+                `;
+                return;
+            }
+
+            // ===== NORMAL COUNTDOWN FOR WEEKDAYS =====
             if (secondsLeft <= 0) {
-                timer.innerHTML = '<span class="text-warning"><i class="fa-solid fa-spinner fa-spin"></i> Processing</span>';
+                timer.innerHTML = `
+                    <span class="countdown-main text-info">
+                        <i class="fa-solid fa-spinner fa-spin me-1"></i>
+                        Processing...
+                    </span>
+                    <span class="countdown-sub">Payout is being processed</span>
+                `;
+                
+                // Try to trigger payout check
+                triggerPayoutCheck(timer);
             } else {
                 const hours = Math.floor(secondsLeft / 3600);
                 const minutes = Math.floor((secondsLeft % 3600) / 60);
@@ -2005,19 +2031,89 @@
                 let timeString;
                 if (hours > 24) {
                     const days = Math.floor(hours / 24);
-                    timeString = `${days}d ${hours % 24}h`;
+                    timeString = `${days}d ${hours % 24}h ${minutes}m`;
                 } else if (hours > 0) {
-                    timeString = `${hours}h ${minutes}m`;
+                    timeString = `${hours}h ${minutes}m ${seconds}s`;
                 } else {
                     timeString = `${minutes}m ${seconds}s`;
                 }
 
-                timer.innerHTML = timeString;
+                timer.innerHTML = `
+                    <span class="countdown-main countdown-normal">
+                        <i class="fa-regular fa-clock me-1"></i>
+                        ${timeString}
+                    </span>
+                    <span class="countdown-sub">until next payout</span>
+                `;
             }
         });
     }
 
-    setInterval(updateCountdowns, 1000);
+    // ===== FUNCTION TO TRIGGER PAYOUT CHECK =====
+    function triggerPayoutCheck(timerElement) {
+        // Only trigger once per session to avoid spam
+        if (timerElement.dataset.triggered === 'true') return;
+        timerElement.dataset.triggered = 'true';
+        
+        const investmentId = timerElement.dataset.investmentId;
+        if (!investmentId) return;
+        
+        // Make AJAX call to check payouts
+        fetch('/api/check-payouts/', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || '',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ investment_id: investmentId })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                timerElement.innerHTML = `
+                    <span class="countdown-main text-success">
+                        <i class="fa-regular fa-circle-check me-1"></i>
+                        Payout Processed!
+                    </span>
+                    <span class="countdown-sub">${data.message || 'Check your wallet'}</span>
+                `;
+                // Refresh the page after a delay to update stats
+                setTimeout(() => location.reload(), 3000);
+            } else if (data.status === 'weekend') {
+                // If weekend, update to show weekend message
+                const isWeekend = new Date().getDay() === 0 || new Date().getDay() === 6;
+                if (isWeekend) {
+                    const now = Math.floor(Date.now() / 1000);
+                    const today = new Date();
+                    const daysUntilMonday = (8 - today.getDay()) % 7 || 7;
+                    const monday = new Date(today);
+                    monday.setDate(today.getDate() + daysUntilMonday);
+                    monday.setHours(9, 0, 0, 0);
+                    const nextMonday = Math.floor(monday.getTime() / 1000);
+                    const hoursUntilMonday = Math.floor((nextMonday - now) / 3600);
+                    const daysUntil = Math.floor(hoursUntilMonday / 24);
+                    const remainingHours = hoursUntilMonday % 24;
+                    
+                    timerElement.innerHTML = `
+                        <span class="countdown-main countdown-paused">
+                            <i class="fa-solid fa-pause-circle me-1"></i>
+                            Weekend Paused
+                        </span>
+                        <span class="countdown-sub">
+                            <i class="fa-regular fa-clock me-1"></i>
+                            ${daysUntil > 0 ? `${daysUntil}d ${remainingHours}h` : `${remainingHours}h`} until Monday
+                        </span>
+                    `;
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Payout check failed:', error);
+        });
+    }
+
+    // Run every 5 seconds
+    setInterval(updateCountdowns, 5000);
     updateCountdowns();
 
     // ===== SHOW INVESTMENT DETAILS =====
