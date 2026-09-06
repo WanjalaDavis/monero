@@ -1536,6 +1536,29 @@ def investment_detail(request, token_id):
     return redirect(f"{reverse('XMR:investments')}?token={token_id}")
 
 
+
+
+def create_missing_wallets(request):
+    """Admin view to create wallets for users who don't have one"""
+    if not request.user.is_staff:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+    
+    users_without_wallet = User.objects.filter(wallet__isnull=True)
+    created_count = 0
+    
+    for user in users_without_wallet:
+        wallet, created = Wallet.objects.get_or_create(user=user)
+        if created:
+            created_count += 1
+    
+    return JsonResponse({
+        'success': True,
+        'message': f'Created {created_count} wallets for users who were missing them'
+    })
+
+
+
+
 @login_required(login_url='XMR:signupin')
 @transaction.atomic
 def buy_investment(request, token_id):
