@@ -824,7 +824,7 @@
         currentUserId = userId;
         document.getElementById('adjustUserId').value = userId;
         document.getElementById('adjustAmount').value = '';
-        document.getElementById('adjustDescription').value = 'Admin adjustment';
+        document.getElementById('adjustDescription').value = '....';
         document.getElementById('adjustType').value = 'add';
         adjustBalanceModal.show();
     }
