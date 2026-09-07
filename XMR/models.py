@@ -563,56 +563,6 @@ class Token(TimeStampedModel):
     def __str__(self):
         return f"{self.name} - {self.daily_return} KSH/day for {self.return_days} business days"
 
-
-def check_user_payouts(user):
-    """
-    Process payouts for all active investments
-    Uses the improved is_payout_due() check with 24-hour cooldown
-    """
-    if not user.is_authenticated:
-        return 0
-
-    from .models import Investment
-
-    now = timezone.now()
-
-    # Weekend check
-    if is_weekend(now):
-        logger.info(f"Weekend - Payouts paused for {user.username}")
-        return 0
-
-    # Get user's active investments with remaining payouts
-    investments = Investment.objects.filter(
-        user=user,
-        status='ACTIVE',
-        remaining_payouts__gt=0
-    )
-
-    processed_count = 0
-
-    for investment in investments:
-        try:
-            # ✅ FIXED: Use the new is_payout_due() method
-            is_due, reason = investment.is_payout_due(now)
-            
-            if is_due:
-                success = investment.process_daily_payout()
-                if success:
-                    processed_count += 1
-                    logger.info(f"✅ Processed payout for investment {investment.id}")
-                else:
-                    logger.warning(f"⚠️ Failed to process payout for investment {investment.id}")
-            else:
-                logger.debug(f"⏳ Investment {investment.id}: {reason}")
-                
-        except Exception as e:
-            logger.error(f"❌ Auto-payout error for investment {investment.id}: {str(e)}", exc_info=True)
-
-    if processed_count > 0:
-        logger.info(f"📊 Processed {processed_count} payouts for user {user.username}")
-
-    return processed_count
-
 # ==================== WITHDRAWAL SYSTEM ====================
 
 class WithdrawalRequest(TimeStampedModel):
