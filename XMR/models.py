@@ -799,6 +799,261 @@ def update_token_purchased_count(sender, instance, created, **kwargs):
         token.save()
 
 
+# ==================== INVESTMENT MODEL ====================
+# Add this after the Token model and before WithdrawalRequest
+
+class Investment(TimeStampedModel):
+    """
+    User's investment in a token - Uses BUSINESS DAYS for all calculations
+    """
+    INVESTMENT_STATUS = [
+        ('ACTIVE', 'Active'),
+        ('COMPLETED', 'Completed'),
+        ('CANCELLED', 'Cancelled'),
+        ('EXPIRED', 'Expired'),
+    ]
+
+    investment_id = models.CharField(max_length=50, unique=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='investments')
+    token = models.ForeignKey(Token, on_delete=models.PROTECT, related_name='investments')
+
+    amount = models.DecimalField(max_digits=20, decimal_places=2, validators=[MinValueValidator(Decimal('800.00'))])
+    daily_return = models.DecimalField(max_digits=10, decimal_places=2)
+
+    start_date = models.DateTimeField(default=timezone.now)
+    end_date = models.DateTimeField()
+    last_payout_date = models.DateTimeField(null=True, blank=True)
+    last_payout_day = models.DateField(null=True, blank=True)
+
+    status = models.CharField(max_length=20, choices=INVESTMENT_STATUS, default='ACTIVE', db_index=True)
+
+    total_paid = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal('0.00'))
+    remaining_payouts = models.IntegerField()
+
+    transaction = models.OneToOneField(Transaction, on_delete=models.SET_NULL, null=True, blank=True,
+                                       related_name='investment_purchase')
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'status']),
+            models.Index(fields=['end_date', 'status']),
+            models.Index(fields=['investment_id']),
+            models.Index(fields=['last_payout_day']),
+        ]
+
+    def calculate_end_date(self):
+        start = self.start_date
+        days_remaining = self.token.return_days
+        current_date = start
+        business_days_counted = 0
+
+        while business_days_counted < days_remaining:
+            current_date += timedelta(days=1)
+            if current_date.weekday() < 5:
+                business_days_counted += 1
+
+        return current_date
+
+    def get_business_days_remaining(self, from_date=None):
+        if from_date is None:
+            from_date = timezone.now()
+
+        if from_date >= self.end_date:
+            return 0
+
+        current = from_date.date()
+        end = self.end_date.date()
+        business_days = 0
+
+        while current <= end:
+            if current.weekday() < 5:
+                business_days += 1
+            current += timedelta(days=1)
+
+        return business_days
+
+    def get_next_payout_date(self):
+        now = timezone.now()
+
+        if not self.last_payout_date:
+            next_date = self.created_at + timedelta(days=1)
+        else:
+            next_date = self.last_payout_date + timedelta(days=1)
+
+        while next_date.weekday() >= 5:
+            next_date += timedelta(days=1)
+
+        return next_date
+
+    def is_payout_due(self, check_date=None):
+        if check_date is None:
+            check_date = timezone.now()
+        
+        if self.status != 'ACTIVE':
+            return False, "Investment is not active"
+        
+        if self.remaining_payouts <= 0:
+            return False, "No remaining payouts"
+        
+        if is_weekend(check_date):
+            return False, "Weekend - No payouts processed"
+        
+        today = check_date.date()
+        
+        if self.last_payout_day == today:
+            return False, f"Already paid today ({today})"
+        
+        reference_time = self.last_payout_date or self.created_at
+        hours_passed = (check_date - reference_time).total_seconds() / 3600
+        
+        if hours_passed < 24:
+            return False, f"Cooldown active"
+        
+        return True, "Payout is due"
+
+    def save(self, *args, **kwargs):
+        if not self.pk:
+            if not self.token.is_available():
+                raise ValidationError("This token is no longer available")
+
+            self.daily_return = self.token.daily_return
+            self.start_date = timezone.now()
+            self.end_date = self.calculate_end_date()
+            self.remaining_payouts = self.token.return_days
+
+            wallet = self.user.wallet
+
+            if wallet.balance < self.amount:
+                raise ValidationError(f"Insufficient available balance.")
+
+            wallet.balance -= self.amount
+            wallet.locked_balance += self.amount
+            wallet.save()
+
+            super().save(*args, **kwargs)
+
+            transaction = Transaction.objects.create(
+                wallet=wallet,
+                transaction_type='INVESTMENT',
+                amount=self.amount,
+                description=f"Investment in {self.token.name}",
+                status='COMPLETED',
+                investment=self
+            )
+
+            self.transaction = transaction
+            super().save(update_fields=['transaction'])
+
+            self.token.purchased_count += 1
+            self.token.save()
+
+        else:
+            super().save(*args, **kwargs)
+
+    def process_daily_payout(self):
+        now = timezone.now()
+        today = now.date()
+        
+        if is_weekend(now):
+            return False
+        
+        if self.status != 'ACTIVE':
+            return False
+        
+        if self.remaining_payouts <= 0:
+            self.complete_investment()
+            return False
+        
+        if self.last_payout_day == today:
+            return False
+        
+        reference_time = self.last_payout_date or self.created_at
+        hours_passed = (now - reference_time).total_seconds() / 3600
+        
+        if hours_passed < 24:
+            return False
+        
+        if self.last_payout_date:
+            business_days_passed = count_business_days(self.last_payout_date, now)
+        else:
+            business_days_passed = count_business_days(self.created_at, now)
+        
+        if business_days_passed < 1:
+            return False
+        
+        try:
+            from django.db import transaction as db_transaction
+            
+            with db_transaction.atomic():
+                profit_amount = self.daily_return
+                wallet = Wallet.objects.select_for_update().get(user=self.user)
+                
+                Transaction.objects.create(
+                    wallet=wallet,
+                    transaction_type='PROFIT',
+                    amount=profit_amount,
+                    description=f"Daily profit from {self.token.name}",
+                    status='COMPLETED',
+                    investment=self,
+                    processed_at=now
+                )
+                
+                wallet.balance += profit_amount
+                wallet.total_earned += profit_amount
+                wallet.save()
+                
+                self.total_paid += profit_amount
+                self.remaining_payouts -= 1
+                self.last_payout_date = now
+                self.last_payout_day = today
+                
+                if self.remaining_payouts <= 0:
+                    self.complete_investment()
+                else:
+                    self.save(update_fields=[
+                        'total_paid', 'remaining_payouts', 
+                        'last_payout_date', 'last_payout_day'
+                    ])
+                
+                return True
+                
+        except Exception:
+            return False
+
+    def complete_investment(self):
+        try:
+            from django.db import transaction as db_transaction
+            
+            with db_transaction.atomic():
+                wallet = Wallet.objects.select_for_update().get(user=self.user)
+                
+                wallet.balance += self.amount
+                wallet.locked_balance -= self.amount
+                wallet.save()
+                
+                self.status = 'COMPLETED'
+                self.save(update_fields=['status'])
+                
+                Transaction.objects.create(
+                    wallet=wallet,
+                    transaction_type='INVESTMENT_RETURN',
+                    amount=self.amount,
+                    description=f"Return of principal from {self.token.name}",
+                    status='COMPLETED',
+                    investment=self
+                )
+                
+                return True
+                
+        except Exception:
+            return False
+
+    def __str__(self):
+        return f"{self.investment_id} - {self.user.username} - {self.token.name}"
+
+
+
 # ==================== ADMIN INTERFACE HELPERS ====================
 
 class AdminDashboard:
