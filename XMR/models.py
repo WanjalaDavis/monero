@@ -563,244 +563,9 @@ class Token(TimeStampedModel):
     def __str__(self):
         return f"{self.name} - {self.daily_return} KSH/day for {self.return_days} business days"
 
-# ==================== WITHDRAWAL SYSTEM ====================
-
-class WithdrawalRequest(TimeStampedModel):
-    """
-    User withdrawal requests - ONLY affects available balance, never locked balance
-    """
-    WITHDRAWAL_STATUS = [
-        ('PENDING', 'Pending'),
-        ('PROCESSING', 'Processing'),
-        ('COMPLETED', 'Completed'),
-        ('REJECTED', 'Rejected'),
-        ('CANCELLED', 'Cancelled'),
-    ]
-
-    PAYMENT_METHODS = [
-        ('MPESA', 'M-Pesa'),
-        ('BANK', 'Bank Transfer'),
-    ]
-
-    request_id = models.CharField(max_length=50, unique=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='withdrawals')
-
-    # Amount
-    amount = models.DecimalField(max_digits=20, decimal_places=2, validators=[MinValueValidator(Decimal('200.00'))])
-    tax_amount = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal('0.00'))
-    net_amount = models.DecimalField(max_digits=20, decimal_places=2)
-
-    # Payment details
-    payment_method = models.CharField(max_length=20, choices=PAYMENT_METHODS, default='MPESA')
-    phone_number = models.CharField(max_length=15, blank=True, null=True)
-    bank_details = models.JSONField(blank=True, null=True)
-
-    # Status
-    status = models.CharField(max_length=20, choices=WITHDRAWAL_STATUS, default='PENDING', db_index=True)
-
-    # Processing
-    processed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
-                                     related_name='processed_withdrawals')
-    processed_at = models.DateTimeField(null=True, blank=True)
-    transaction_code = models.CharField(max_length=50, blank=True, null=True)
-
-    # Rejection
-    rejection_reason = models.TextField(blank=True, null=True)
-
-    # Admin notes
-    admin_notes = models.TextField(blank=True, null=True)
-
-    class Meta:
-        ordering = ['-created_at']
-        indexes = [
-            models.Index(fields=['user', 'status']),
-            models.Index(fields=['status', 'created_at']),
-            models.Index(fields=['request_id']),
-        ]
-
-    def save(self, *args, **kwargs):
-        if not self.pk:  # New withdrawal request
-            # Calculate 5% tax
-            self.tax_amount = self.amount * Decimal('0.05')
-            self.net_amount = self.amount - self.tax_amount
-
-            # Check minimum withdrawal
-            if self.amount < 200:
-                raise ValidationError("Minimum withdrawal amount is 200 KSH")
-
-            wallet = self.user.wallet
-
-            # Check available balance (not locked balance)
-            if wallet.balance < self.amount:
-                raise ValidationError(
-                    f"Insufficient available balance. You have {wallet.balance} KSH available, but requested {self.amount} KSH.")
-
-        super().save(*args, **kwargs)
-
-    def process(self, admin_user, transaction_code=None):
-        """Approve and process withdrawal"""
-        if self.status != 'PENDING':
-            raise ValidationError("Can only process pending withdrawals")
-
-        self.status = 'PROCESSING'
-        self.processed_by = admin_user
-        self.processed_at = timezone.now()
-        self.transaction_code = transaction_code
-        self.save()
-
-    def complete(self, admin_user, transaction_code):
-        """Mark withdrawal as completed - DEDUCT FROM AVAILABLE BALANCE ONLY"""
-        if self.status not in ['PENDING', 'PROCESSING']:
-            raise ValidationError("Can only complete pending or processing withdrawals")
-
-        wallet = self.user.wallet
-
-        # Check available balance again
-        if wallet.balance < self.amount:
-            raise ValidationError(f"Insufficient available balance. Current balance: {wallet.balance} KSH")
-
-        # Create withdrawal transaction
-        transaction = Transaction.objects.create(
-            wallet=wallet,
-            transaction_type='WITHDRAWAL',
-            amount=self.amount,
-            description=f"Withdrawal via {self.payment_method}",
-            status='COMPLETED',
-            withdrawal=self
-        )
-        transaction.processed_by = admin_user
-        transaction.processed_at = timezone.now()
-        transaction.save()
-
-        # Update wallet - ONLY deduct from available balance
-        wallet.balance -= self.amount
-        wallet.total_withdrawn += self.amount
-        wallet.save()
-
-        # Add tax as separate transaction or record
-        if self.tax_amount > 0:
-            Transaction.objects.create(
-                wallet=wallet,
-                transaction_type='PENALTY',
-                amount=self.tax_amount,
-                description=f"5% withdrawal tax",
-                status='COMPLETED'
-            )
-
-        self.status = 'COMPLETED'
-        self.transaction_code = transaction_code
-        self.save()
-
-    def reject(self, admin_user, reason):
-        """Reject withdrawal request - NO FUNDS TO UNLOCK"""
-        if self.status not in ['PENDING', 'PROCESSING']:
-            raise ValidationError("Can only reject pending or processing withdrawals")
-
-        self.status = 'REJECTED'
-        self.processed_by = admin_user
-        self.processed_at = timezone.now()
-        self.rejection_reason = reason
-        self.save()
-
-    def cancel(self):
-        """User cancels withdrawal request - NO FUNDS TO UNLOCK"""
-        if self.status != 'PENDING':
-            raise ValidationError("Can only cancel pending withdrawals")
-
-        self.status = 'CANCELLED'
-        self.save()
-
-    def __str__(self):
-        return f"{self.request_id} - {self.user.username} - {self.amount} KSH"
-
-
-# ==================== SYSTEM CONFIGURATION ====================
-
-class SystemConfig(models.Model):
-    """
-    Global system configuration
-    """
-    key = models.CharField(max_length=50, unique=True, db_index=True)
-    value = models.JSONField()
-    description = models.TextField(blank=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        verbose_name = "System Configuration"
-        verbose_name_plural = "System Configurations"
-
-    @classmethod
-    def get_config(cls, key, default=None):
-        """Get configuration value"""
-        try:
-            return cls.objects.get(key=key).value
-        except cls.DoesNotExist:
-            return default
-
-    def __str__(self):
-        return self.key
-
-
-class SystemLog(TimeStampedModel):
-    """
-    System-wide logging for important events
-    """
-    LOG_TYPES = [
-        ('INFO', 'Information'),
-        ('WARNING', 'Warning'),
-        ('ERROR', 'Error'),
-        ('CRITICAL', 'Critical'),
-        ('ADMIN_ACTION', 'Admin Action'),
-    ]
-
-    log_type = models.CharField(max_length=20, choices=LOG_TYPES, db_index=True)
-    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
-    action = models.CharField(max_length=100)
-    description = models.TextField()
-    ip_address = models.GenericIPAddressField(null=True, blank=True)
-    data = models.JSONField(blank=True, null=True)
-
-    class Meta:
-        ordering = ['-created_at']
-        indexes = [
-            models.Index(fields=['log_type', '-created_at']),
-            models.Index(fields=['user', '-created_at']),
-        ]
-
-    def __str__(self):
-        return f"{self.log_type} - {self.action} - {self.created_at}"
-
-
-# ==================== SIGNALS ====================
-
-@receiver(post_save, sender=User)
-def create_user_wallet_and_profile(sender, instance, created, **kwargs):
-    """Create wallet and profile for new users"""
-    if created:
-        UserProfile.objects.get_or_create(user=instance)
-        Wallet.objects.get_or_create(user=instance)
-    else:
-        UserProfile.objects.get_or_create(
-            user=instance,
-            defaults={
-                'phone_number': '',
-                'national_id_name': instance.get_full_name() or instance.username
-            }
-        )
-        Wallet.objects.get_or_create(user=instance)
-
-
-@receiver(post_save, sender=Investment)
-def update_token_purchased_count(sender, instance, created, **kwargs):
-    """Update token purchased count when investment is made"""
-    if created:
-        token = instance.token
-        token.purchased_count = Investment.objects.filter(token=token, status='ACTIVE').count()
-        token.save()
-
 
 # ==================== INVESTMENT MODEL ====================
-# Add this after the Token model and before WithdrawalRequest
+# MOVED HERE - BEFORE signals and BEFORE WithdrawalRequest
 
 class Investment(TimeStampedModel):
     """
@@ -1052,6 +817,213 @@ class Investment(TimeStampedModel):
     def __str__(self):
         return f"{self.investment_id} - {self.user.username} - {self.token.name}"
 
+
+# ==================== WITHDRAWAL SYSTEM ====================
+
+class WithdrawalRequest(TimeStampedModel):
+    """
+    User withdrawal requests - ONLY affects available balance, never locked balance
+    """
+    WITHDRAWAL_STATUS = [
+        ('PENDING', 'Pending'),
+        ('PROCESSING', 'Processing'),
+        ('COMPLETED', 'Completed'),
+        ('REJECTED', 'Rejected'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+
+    PAYMENT_METHODS = [
+        ('MPESA', 'M-Pesa'),
+        ('BANK', 'Bank Transfer'),
+    ]
+
+    request_id = models.CharField(max_length=50, unique=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='withdrawals')
+
+    # Amount
+    amount = models.DecimalField(max_digits=20, decimal_places=2, validators=[MinValueValidator(Decimal('200.00'))])
+    tax_amount = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal('0.00'))
+    net_amount = models.DecimalField(max_digits=20, decimal_places=2)
+
+    # Payment details
+    payment_method = models.CharField(max_length=20, choices=PAYMENT_METHODS, default='MPESA')
+    phone_number = models.CharField(max_length=15, blank=True, null=True)
+    bank_details = models.JSONField(blank=True, null=True)
+
+    # Status
+    status = models.CharField(max_length=20, choices=WITHDRAWAL_STATUS, default='PENDING', db_index=True)
+
+    # Processing
+    processed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                     related_name='processed_withdrawals')
+    processed_at = models.DateTimeField(null=True, blank=True)
+    transaction_code = models.CharField(max_length=50, blank=True, null=True)
+
+    # Rejection
+    rejection_reason = models.TextField(blank=True, null=True)
+
+    # Admin notes
+    admin_notes = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'status']),
+            models.Index(fields=['status', 'created_at']),
+            models.Index(fields=['request_id']),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.pk:  # New withdrawal request
+            # Calculate 5% tax
+            self.tax_amount = self.amount * Decimal('0.05')
+            self.net_amount = self.amount - self.tax_amount
+
+            # Check minimum withdrawal
+            if self.amount < 200:
+                raise ValidationError("Minimum withdrawal amount is 200 KSH")
+
+            wallet = self.user.wallet
+
+            # Check available balance (not locked balance)
+            if wallet.balance < self.amount:
+                raise ValidationError(
+                    f"Insufficient available balance. You have {wallet.balance} KSH available, but requested {self.amount} KSH.")
+
+        super().save(*args, **kwargs)
+
+    def process(self, admin_user, transaction_code=None):
+        """Approve and process withdrawal"""
+        if self.status != 'PENDING':
+            raise ValidationError("Can only process pending withdrawals")
+
+        self.status = 'PROCESSING'
+        self.processed_by = admin_user
+        self.processed_at = timezone.now()
+        self.transaction_code = transaction_code
+        self.save()
+
+    def complete(self, admin_user, transaction_code):
+        """Mark withdrawal as completed - DEDUCT FROM AVAILABLE BALANCE ONLY"""
+        if self.status not in ['PENDING', 'PROCESSING']:
+            raise ValidationError("Can only complete pending or processing withdrawals")
+
+        wallet = self.user.wallet
+
+        # Check available balance again
+        if wallet.balance < self.amount:
+            raise ValidationError(f"Insufficient available balance. Current balance: {wallet.balance} KSH")
+
+        # Create withdrawal transaction
+        transaction = Transaction.objects.create(
+            wallet=wallet,
+            transaction_type='WITHDRAWAL',
+            amount=self.amount,
+            description=f"Withdrawal via {self.payment_method}",
+            status='COMPLETED',
+            withdrawal=self
+        )
+        transaction.processed_by = admin_user
+        transaction.processed_at = timezone.now()
+        transaction.save()
+
+        # Update wallet - ONLY deduct from available balance
+        wallet.balance -= self.amount
+        wallet.total_withdrawn += self.amount
+        wallet.save()
+
+        # Add tax as separate transaction or record
+        if self.tax_amount > 0:
+            Transaction.objects.create(
+                wallet=wallet,
+                transaction_type='PENALTY',
+                amount=self.tax_amount,
+                description=f"5% withdrawal tax",
+                status='COMPLETED'
+            )
+
+        self.status = 'COMPLETED'
+        self.transaction_code = transaction_code
+        self.save()
+
+    def reject(self, admin_user, reason):
+        """Reject withdrawal request - NO FUNDS TO UNLOCK"""
+        if self.status not in ['PENDING', 'PROCESSING']:
+            raise ValidationError("Can only reject pending or processing withdrawals")
+
+        self.status = 'REJECTED'
+        self.processed_by = admin_user
+        self.processed_at = timezone.now()
+        self.rejection_reason = reason
+        self.save()
+
+    def cancel(self):
+        """User cancels withdrawal request - NO FUNDS TO UNLOCK"""
+        if self.status != 'PENDING':
+            raise ValidationError("Can only cancel pending withdrawals")
+
+        self.status = 'CANCELLED'
+        self.save()
+
+    def __str__(self):
+        return f"{self.request_id} - {self.user.username} - {self.amount} KSH"
+
+
+# ==================== SYSTEM CONFIGURATION ====================
+
+class SystemConfig(models.Model):
+    """
+    Global system configuration
+    """
+    key = models.CharField(max_length=50, unique=True, db_index=True)
+    value = models.JSONField()
+    description = models.TextField(blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "System Configuration"
+        verbose_name_plural = "System Configurations"
+
+    @classmethod
+    def get_config(cls, key, default=None):
+        """Get configuration value"""
+        try:
+            return cls.objects.get(key=key).value
+        except cls.DoesNotExist:
+            return default
+
+    def __str__(self):
+        return self.key
+
+
+class SystemLog(TimeStampedModel):
+    """
+    System-wide logging for important events
+    """
+    LOG_TYPES = [
+        ('INFO', 'Information'),
+        ('WARNING', 'Warning'),
+        ('ERROR', 'Error'),
+        ('CRITICAL', 'Critical'),
+        ('ADMIN_ACTION', 'Admin Action'),
+    ]
+
+    log_type = models.CharField(max_length=20, choices=LOG_TYPES, db_index=True)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    action = models.CharField(max_length=100)
+    description = models.TextField()
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    data = models.JSONField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['log_type', '-created_at']),
+            models.Index(fields=['user', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.log_type} - {self.action} - {self.created_at}"
 
 
 # ==================== ADMIN INTERFACE HELPERS ====================
@@ -1619,6 +1591,35 @@ class ChatNotificationMessage(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.notification_type} - {self.created_at}"
+
+
+# ==================== SIGNALS ====================
+# MUST BE AT THE VERY BOTTOM OF THE FILE
+
+@receiver(post_save, sender=User)
+def create_user_wallet_and_profile(sender, instance, created, **kwargs):
+    """Create wallet and profile for new users"""
+    if created:
+        UserProfile.objects.get_or_create(user=instance)
+        Wallet.objects.get_or_create(user=instance)
+    else:
+        UserProfile.objects.get_or_create(
+            user=instance,
+            defaults={
+                'phone_number': '',
+                'national_id_name': instance.get_full_name() or instance.username
+            }
+        )
+        Wallet.objects.get_or_create(user=instance)
+
+
+@receiver(post_save, sender=Investment)
+def update_token_purchased_count(sender, instance, created, **kwargs):
+    """Update token purchased count when investment is made"""
+    if created:
+        token = instance.token
+        token.purchased_count = Investment.objects.filter(token=token, status='ACTIVE').count()
+        token.save()
 
 
 # ==================== CHAT SIGNALS ====================
