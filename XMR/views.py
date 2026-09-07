@@ -1328,10 +1328,9 @@ def investments(request):
     """View all available investments with payout schedule information"""
 
     # ===== AUTO PAYOUT CHECK =====
-   processed = check_user_payouts(request.user)
-   if processed > 0:
-      logger.info(f"Investments page processed {processed} payouts for {request.user.username}")
-    # =============================
+    processed = check_user_payouts(request.user)
+    if processed > 0:
+        logger.info(f"Investments page processed {processed} payouts for {request.user.username}")
 
     # Get active tokens
     active_tokens = Token.objects.filter(status='ACTIVE').order_by('token_number')
