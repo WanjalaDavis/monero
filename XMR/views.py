@@ -266,15 +266,14 @@ if not hasattr(cache, 'delete_pattern'):
     cache.delete_pattern = safe_cache_delete_pattern
 
 # ==================== AUTO PAYOUT HELPER FUNCTION ====================
-# ==================== CORRECTED AUTO PAYOUT HELPER FUNCTIONS ====================
+
 
 def check_user_payouts(user):
     """
-    Enhanced version that ONLY processes payouts on weekdays (Monday-Friday)
-    Weekends are skipped - payouts accumulate and process on the next business day
-
-    This function is called when users visit their account or investments page.
-    It processes ONE payout per business day that has passed since the last payout.
+    Process payouts for all active investments
+    Uses the improved is_payout_due() check with 24-hour cooldown
+    
+    ✅ FIXED: Prevents payouts on every page refresh
     """
     if not user.is_authenticated:
         return 0
@@ -283,48 +282,47 @@ def check_user_payouts(user):
 
     now = timezone.now()
 
-    # ===== WEEKEND CHECK =====
+    # Weekend check
     if is_weekend(now):
-        logger.info(f"Weekend detected ({now.strftime('%A')}) - Payouts paused for user {user.username}")
-        return 0  # No payouts on weekends
+        logger.info(f"Weekend - Payouts paused for {user.username}")
+        return 0
 
-    # Get user's active investments that still have payouts remaining
+    # Get user's active investments with remaining payouts
     investments = Investment.objects.filter(
         user=user,
         status='ACTIVE',
         remaining_payouts__gt=0
     )
 
+    if not investments.exists():
+        logger.debug(f"No active investments for {user.username}")
+        return 0
+
     processed_count = 0
 
     for investment in investments:
         try:
-            # Calculate how many business days have passed since last payout
-            reference_time = investment.last_payout_date or investment.created_at
-
-            # Count business days (weekdays only) between reference and now
-            business_days_passed = count_business_days(reference_time, now)
-
-            # Process exactly ONE payout per business day that has passed
-            # This handles catch-up for missed weekdays (e.g., Monday catches up Friday)
-            if business_days_passed >= 1:
-                # Process only ONE payout per check to prevent multiple in one day
+            # ✅ FIXED: Use the new is_payout_due() method from the model
+            is_due, reason = investment.is_payout_due(now)
+            
+            if is_due:
                 success = investment.process_daily_payout()
                 if success:
                     processed_count += 1
-                    logger.info(f"✅ Processed weekday payout for investment {investment.id} (User: {user.username})")
+                    logger.info(f"✅ Processed payout for investment {investment.id} (User: {user.username})")
                 else:
                     logger.warning(f"⚠️ Failed to process payout for investment {investment.id}")
-                    break  # Stop if we hit an error
-
+            else:
+                # Log the reason why payout wasn't processed (for debugging)
+                logger.debug(f"⏳ Investment {investment.id}: {reason}")
+                
         except Exception as e:
             logger.error(f"❌ Auto-payout error for investment {investment.id}: {str(e)}", exc_info=True)
 
     if processed_count > 0:
-        logger.info(f"📊 Processed {processed_count} weekday payouts for user {user.username}")
+        logger.info(f"📊 Processed {processed_count} payouts for user {user.username}")
 
     return processed_count
-
 
 def calculate_missed_payouts(investment, current_time):
     """
@@ -759,7 +757,9 @@ def account(request):
     """Consolidated user account dashboard with all features"""
 
     global profile
-    check_user_payouts(request.user)
+    processed = check_user_payouts(request.user)
+    if processed > 0:
+        logger.info(f"Account page processed {processed} payouts for {request.user.username}")
     # =============================
 
     try:
@@ -1328,7 +1328,9 @@ def investments(request):
     """View all available investments with payout schedule information"""
 
     # ===== AUTO PAYOUT CHECK =====
-    check_user_payouts(request.user)
+   processed = check_user_payouts(request.user)
+   if processed > 0:
+      logger.info(f"Investments page processed {processed} payouts for {request.user.username}")
     # =============================
 
     # Get active tokens
