@@ -564,302 +564,54 @@ class Token(TimeStampedModel):
         return f"{self.name} - {self.daily_return} KSH/day for {self.return_days} business days"
 
 
-class Investment(TimeStampedModel):
+def check_user_payouts(user):
     """
-    User's investment in a token - Uses BUSINESS DAYS for all calculations
+    Process payouts for all active investments
+    Uses the improved is_payout_due() check with 24-hour cooldown
     """
-    INVESTMENT_STATUS = [
-        ('ACTIVE', 'Active'),
-        ('COMPLETED', 'Completed'),
-        ('CANCELLED', 'Cancelled'),
-        ('EXPIRED', 'Expired'),
-    ]
-
-    investment_id = models.CharField(max_length=50, unique=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='investments')
-    token = models.ForeignKey(Token, on_delete=models.PROTECT, related_name='investments')
-
-    # Investment details
-    amount = models.DecimalField(max_digits=20, decimal_places=2, validators=[MinValueValidator(Decimal('800.00'))])
-    daily_return = models.DecimalField(max_digits=10, decimal_places=2)
-
-    # Dates
-    start_date = models.DateTimeField(default=timezone.now)
-    end_date = models.DateTimeField()
-    last_payout_date = models.DateTimeField(null=True, blank=True)
-
-    # Status
-    status = models.CharField(max_length=20, choices=INVESTMENT_STATUS, default='ACTIVE', db_index=True)
-
-    # Returns tracking
-    total_paid = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal('0.00'))
-    remaining_payouts = models.IntegerField()
-
-    # Related transaction
-    transaction = models.OneToOneField(Transaction, on_delete=models.SET_NULL, null=True, blank=True,
-                                       related_name='investment_purchase')
-
-    class Meta:
-        ordering = ['-created_at']
-        indexes = [
-            models.Index(fields=['user', 'status']),
-            models.Index(fields=['end_date', 'status']),
-            models.Index(fields=['investment_id']),
-        ]
-
-    # ===== BUSINESS DAY HELPER METHODS =====
-
-    def calculate_end_date(self):
-        """
-        Calculate end date based on business days only (Monday-Friday)
-        Returns: datetime of the last business day
-        """
-        start = self.start_date
-        days_remaining = self.token.return_days
-        current_date = start
-
-        # Count forward only business days
-        business_days_counted = 0
-
-        while business_days_counted < days_remaining:
-            current_date += timedelta(days=1)
-            # Only count if it's a weekday (Monday-Friday)
-            if current_date.weekday() < 5:
-                business_days_counted += 1
-
-        return current_date
-
-    def get_business_days_remaining(self, from_date=None):
-        """
-        Calculate business days remaining until end_date
-        Returns: integer number of business days remaining
-        """
-        if from_date is None:
-            from_date = timezone.now()
-
-        if from_date >= self.end_date:
-            return 0
-
-        # Count business days between now and end_date
-        current = from_date.date()
-        end = self.end_date.date()
-        business_days = 0
-
-        while current <= end:
-            if current.weekday() < 5:  # Monday-Friday
-                business_days += 1
-            current += timedelta(days=1)
-
-        return business_days
-
-    def get_next_payout_date(self):
-        """
-        Get the next business day payout date
-        Returns: datetime of next payout (always a weekday)
-        """
-        now = timezone.now()
-
-        # If no payouts yet, next payout is 24 business hours after creation
-        if not self.last_payout_date:
-            next_date = self.created_at + timedelta(days=1)
-        else:
-            next_date = self.last_payout_date + timedelta(days=1)
-
-        # If it's a weekend, move to next Monday
-        while next_date.weekday() >= 5:  # Saturday (5) or Sunday (6)
-            next_date += timedelta(days=1)
-
-        return next_date
-
-    def get_business_days_until_payout(self):
-        """
-        Get business days until next payout
-        Returns: tuple (days, hours, minutes)
-        """
-        next_payout = self.get_next_payout_date()
-        now = timezone.now()
-
-        if next_payout <= now:
-            return (0, 0, 0)
-
-        # Calculate difference
-        diff = next_payout - now
-        total_seconds = diff.total_seconds()
-
-        days = int(total_seconds // (24 * 3600))
-        hours = int((total_seconds % (24 * 3600)) // 3600)
-        minutes = int((total_seconds % 3600) // 60)
-
-        return (days, hours, minutes)
-
-    # ===== SAVE METHOD =====
-
-    def save(self, *args, **kwargs):
-        if not self.pk:  # New investment
-            # Check if token is still available
-            if not self.token.is_available():
-                raise ValidationError("This token is no longer available")
-
-            self.daily_return = self.token.daily_return
-
-            # === FIXED: Calculate end date using BUSINESS DAYS ===
-            self.start_date = timezone.now()
-            self.end_date = self.calculate_end_date()
-            self.remaining_payouts = self.token.return_days
-
-            # Lock the funds in wallet
-            wallet = self.user.wallet
-
-            # Check if user has enough available balance
-            if wallet.balance < self.amount:
-                raise ValidationError(f"Insufficient available balance. You have {wallet.balance} KSH available.")
-
-            # MOVE money from available to locked
-            wallet.balance -= self.amount
-            wallet.locked_balance += self.amount
-            wallet.save()
-
-            # Save investment first to get an ID
-            super().save(*args, **kwargs)
-
-            # Create transaction with the saved investment
-            transaction = Transaction.objects.create(
-                wallet=wallet,
-                transaction_type='INVESTMENT',
-                amount=self.amount,
-                description=f"Investment in {self.token.name}",
-                status='COMPLETED',
-                investment=self
-            )
-
-            # Update investment with transaction reference
-            self.transaction = transaction
-            super().save(update_fields=['transaction'])
-
-            # Update token purchase count
-            self.token.purchased_count += 1
-            self.token.save()
-
-        else:  # Existing investment
-            super().save(*args, **kwargs)
-
-    # ===== PAYOUT METHODS =====
-
-    def process_daily_payout(self):
-        """
-        Process a single day's payout - PROFIT ONLY, no principal unlocking
-        Only processes if it's a WEEKDAY (Monday-Friday)
-        """
-        # === FIXED: Weekend check ===
-        now = timezone.now()
-        if is_weekend(now):
-            # Don't process on weekends
-            return False
-
-        if self.status != 'ACTIVE':
-            return False
-
-        if self.remaining_payouts <= 0:
-            self.complete_investment()
-            return False
-
-        # Check if enough business days have passed
-        if self.last_payout_date:
-            # Count business days since last payout
-            business_days_passed = count_business_days(self.last_payout_date, now)
-        else:
-            # First payout - count business days since creation
-            business_days_passed = count_business_days(self.created_at, now)
-
-        # Only process if at least ONE business day has passed
-        if business_days_passed < 1:
-            return False
-
-        # Calculate payout (profit only - principal stays locked)
-        profit_amount = self.daily_return
-
-        # Create profit transaction
-        transaction = Transaction.objects.create(
-            wallet=self.user.wallet,
-            transaction_type='PROFIT',
-            amount=profit_amount,
-            description=f"Daily profit from {self.token.name}",
-            status='COMPLETED',
-            investment=self
-        )
-
-        # Update wallet - ONLY ADD PROFIT to available balance
-        wallet = self.user.wallet
-        wallet.balance += profit_amount
-        wallet.total_earned += profit_amount
-        wallet.save()
-
-        # Update investment
-        self.total_paid += profit_amount
-        self.remaining_payouts -= 1
-        self.last_payout_date = now
-
-        if self.remaining_payouts <= 0:
-            self.complete_investment()
-        else:
-            self.save()
-
-        return True
-
-    def check_and_process_payout(self):
-        """
-        Check if payout is due and process if needed
-        Only processes on weekdays
-        """
-        now = timezone.now()
-
-        # === FIXED: Weekend check ===
-        if is_weekend(now):
-            return False
-
-        if self.status != 'ACTIVE' or self.remaining_payouts <= 0:
-            return False
-
-        # Check if enough business days have passed
-        if self.last_payout_date:
-            business_days_passed = count_business_days(self.last_payout_date, now)
-        else:
-            business_days_passed = count_business_days(self.created_at, now)
-
-        if business_days_passed >= 1:
-            return self.process_daily_payout()
-
-        return False
-
-    def complete_investment(self):
-        """Mark investment as completed - RETURN THE PRINCIPAL to available balance"""
-        self.status = 'COMPLETED'
-
-        # Return the FULL principal to available balance
-        wallet = self.user.wallet
-        wallet.balance += self.amount
-        wallet.locked_balance -= self.amount
-        wallet.save()
-
-        self.save()
-
-    def get_progress_percentage(self):
-        """Calculate investment progress based on business days"""
-        total_days = self.token.return_days
-        completed_days = total_days - self.remaining_payouts
-        return (completed_days / total_days) * 100 if total_days > 0 else 0
-
-    def get_formatted_end_date(self):
-        """Get end date formatted for display"""
-        return self.end_date.strftime('%A, %B %d, %Y')
-
-    def get_business_days_elapsed(self):
-        """Get number of business days elapsed since start"""
-        return count_business_days(self.start_date, timezone.now())
-
-    def __str__(self):
-        return f"{self.investment_id} - {self.user.username} - {self.token.name}"
-
+    if not user.is_authenticated:
+        return 0
+
+    from .models import Investment
+
+    now = timezone.now()
+
+    # Weekend check
+    if is_weekend(now):
+        logger.info(f"Weekend - Payouts paused for {user.username}")
+        return 0
+
+    # Get user's active investments with remaining payouts
+    investments = Investment.objects.filter(
+        user=user,
+        status='ACTIVE',
+        remaining_payouts__gt=0
+    )
+
+    processed_count = 0
+
+    for investment in investments:
+        try:
+            # ✅ FIXED: Use the new is_payout_due() method
+            is_due, reason = investment.is_payout_due(now)
+            
+            if is_due:
+                success = investment.process_daily_payout()
+                if success:
+                    processed_count += 1
+                    logger.info(f"✅ Processed payout for investment {investment.id}")
+                else:
+                    logger.warning(f"⚠️ Failed to process payout for investment {investment.id}")
+            else:
+                logger.debug(f"⏳ Investment {investment.id}: {reason}")
+                
+        except Exception as e:
+            logger.error(f"❌ Auto-payout error for investment {investment.id}: {str(e)}", exc_info=True)
+
+    if processed_count > 0:
+        logger.info(f"📊 Processed {processed_count} payouts for user {user.username}")
+
+    return processed_count
 
 # ==================== WITHDRAWAL SYSTEM ====================
 
