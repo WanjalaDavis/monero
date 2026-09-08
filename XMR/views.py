@@ -83,16 +83,13 @@ def is_weekend(date=None):
 def is_withdrawal_window(date=None):
     """
     Check if current time is within withdrawal window:
-    - Weekend (Saturday or Sunday)
+    - Weekday (Monday-Friday) OR Weekend (Saturday-Sunday)
     - Between 8 AM and 5 PM
     """
     if date is None:
         date = timezone.now()
 
-    # Check if it's weekend
-    if not is_weekend(date):
-        return False, "Withdrawals are only available on weekends (Saturday and Sunday)"
-
+    # Remove weekend restriction - allow every day
     # Check time window: 8 AM to 5 PM
     current_time = date.time()
     start_time = time(8, 0)  # 8:00 AM
@@ -104,66 +101,61 @@ def is_withdrawal_window(date=None):
     if current_time > end_time:
         return False, "Withdrawals close at 5:00 PM"
 
-    return True, "Withdrawal window is open"
-
+    # Get day name for the message
+    day_name = date.strftime('%A')
+    return True, f"Withdrawal window is open ({day_name})"
+    
 
 def get_withdrawal_window_status():
     """
     Get detailed status of withdrawal window for display
+    Withdrawals available every day (including weekdays)
     """
     from django.utils import timezone
     now = timezone.now()
 
-    if is_weekend(now):
-        current_time = now.time()
-        start_time = time(8, 0)
-        end_time = time(17, 0)
+    current_time = now.time()
+    start_time = time(8, 0)
+    end_time = time(17, 0)
 
-        if current_time < start_time:
-            # FIX: Make datetime timezone-aware
-            start_datetime = timezone.make_aware(
-                datetime.combine(now.date(), start_time)
-            )
-            remaining = (start_datetime - now).total_seconds() / 60
-            return {
-                'open': False,
-                'status': 'Not yet open',
-                'message': f'Withdrawals open at 8:00 AM ({int(remaining)} minutes remaining)',
-                'opens_at': '8:00 AM',
-                'closes_at': '5:00 PM'
-            }
-        elif current_time > end_time:
-            return {
-                'open': False,
-                'status': 'Closed',
-                'message': 'Withdrawals closed for today. Please try again next weekend.',
-                'opens_at': '8:00 AM',
-                'closes_at': '5:00 PM'
-            }
-        else:
-            # FIX: Make datetime timezone-aware
-            end_datetime = timezone.make_aware(
-                datetime.combine(now.date(), end_time)
-            )
-            remaining = (end_datetime - now).total_seconds() / 60
-            return {
-                'open': True,
-                'status': 'Open',
-                'message': f'Withdrawals are open! ({int(remaining)} minutes remaining)',
-                'opens_at': '8:00 AM',
-                'closes_at': '5:00 PM'
-            }
-    else:
-        # It's a weekday
-        days_until_weekend = 5 - now.weekday()  # Days until Saturday
+    # Get day name
+    day_name = now.strftime('%A')
+
+    if current_time < start_time:
+        # FIX: Make datetime timezone-aware
+        start_datetime = timezone.make_aware(
+            datetime.combine(now.date(), start_time)
+        )
+        remaining = (start_datetime - now).total_seconds() / 60
         return {
             'open': False,
-            'status': 'Weekday',
-            'message': f'Withdrawals are only available on weekends. Next window opens in {days_until_weekend} days.',
-            'opens_at': '8:00 AM (Saturday)',
-            'closes_at': '5:00 PM (Sunday)'
+            'status': 'Not yet open',
+            'message': f'Withdrawals open at 8:00 AM ({int(remaining)} minutes remaining)',
+            'opens_at': '8:00 AM',
+            'closes_at': '5:00 PM'
         }
-
+    elif current_time > end_time:
+        return {
+            'open': False,
+            'status': 'Closed',
+            'message': 'Withdrawals closed for today. Please try again tomorrow.',
+            'opens_at': '8:00 AM',
+            'closes_at': '5:00 PM'
+        }
+    else:
+        # FIX: Make datetime timezone-aware
+        end_datetime = timezone.make_aware(
+            datetime.combine(now.date(), end_time)
+        )
+        remaining = (end_datetime - now).total_seconds() / 60
+        return {
+            'open': True,
+            'status': 'Open',
+            'message': f'Withdrawals are open! ({int(remaining)} minutes remaining)',
+            'opens_at': '8:00 AM',
+            'closes_at': '5:00 PM'
+        }
+        
 def count_business_days(start_date, end_date):
     """
     Count business days (Monday-Friday) between two dates
@@ -940,27 +932,17 @@ def account(request):
         payout_status = 'active'
         payout_message = f'Today is a payout day ({now.strftime("%A")})'
 
-    # Get next withdrawal window
-    if is_weekend_now:
-        if is_withdrawal_open:
-            next_withdrawal_window = 'Open now!'
-            next_withdrawal_status = 'open'
-        else:
-            if now.time() < time(8, 0):
-                next_withdrawal_window = 'Today at 8:00 AM'
-                next_withdrawal_status = 'opens_today'
-            else:
-                next_withdrawal_window = 'Next weekend'
-                next_withdrawal_status = 'closed_today'
+    # ===== UPDATED: Get next withdrawal window (available EVERY DAY) =====
+    if is_withdrawal_open:
+        next_withdrawal_window = 'Open now!'
+        next_withdrawal_status = 'open'
     else:
-        days_until_saturday = 5 - now.weekday()
-        if days_until_saturday <= 0:
-            next_withdrawal_window = 'Tomorrow (Saturday)'
-        elif days_until_saturday == 1:
-            next_withdrawal_window = 'Tomorrow (Saturday)'
+        if now.time() < time(8, 0):
+            next_withdrawal_window = 'Today at 8:00 AM'
+            next_withdrawal_status = 'opens_today'
         else:
-            next_withdrawal_window = f'In {days_until_saturday} days (Saturday)'
-        next_withdrawal_status = 'weekday'
+            next_withdrawal_window = 'Tomorrow at 8:00 AM'
+            next_withdrawal_status = 'closed_today'
 
     context = {
         # User and profile
@@ -1029,7 +1011,9 @@ def account(request):
         'payout_message': payout_message,
         'next_payout_day': next_payout_day_display,
         'payout_schedule': 'Monday - Friday (Weekdays only)',
-        'withdrawal_schedule': 'Saturday - Sunday, 8:00 AM - 5:00 PM',
+
+        # ===== UPDATED: Withdrawal schedule (available every day) =====
+        'withdrawal_schedule': 'Every day, 8:00 AM - 5:00 PM',
 
         # Next withdrawal
         'next_withdrawal_window': next_withdrawal_window,
@@ -1048,6 +1032,7 @@ def account(request):
             return handle_kyc_upload(request, profile)
 
     return render(request, 'account.html', context)
+    
 
 def handle_profile_update(request, profile):
     """Handle profile update"""
@@ -1191,7 +1176,123 @@ def create_deposit(request):
 
 # ==================== WITHDRAWAL VIEWS ====================
 @login_required(login_url='XMR:signupin')
+# ==================== WITHDRAWAL VIEWS ====================
+@login_required(login_url='XMR:signupin')
 def create_withdrawal(request):
+    """
+    Create a new withdrawal request
+    ALLOWED on EVERY DAY (Monday-Sunday) between 8 AM - 5 PM
+    """
+    if request.method != 'POST':
+        return redirect('XMR:account')
+
+    # ===== WITHDRAWAL WINDOW CHECK - Available every day =====
+    is_open, message = is_withdrawal_window()
+
+    if not is_open:
+        # Get detailed status for better error message
+        status = get_withdrawal_window_status()
+        
+        # Get day name for context
+        day_name = timezone.now().strftime('%A')
+        
+        error_message = f"""
+        ❌ Withdrawals are only available from 8:00 AM to 5:00 PM.
+
+        Current Status: {status['status']}
+        {status['message']}
+
+        Window Hours: {status['opens_at']} - {status['closes_at']}
+        Today is: {day_name}
+        """
+        messages.error(request, error_message)
+
+        # Log the attempt
+        SystemLog.objects.create(
+            log_type='WARNING',
+            user=request.user,
+            action='WITHDRAWAL_ATTEMPT_OUTSIDE_WINDOW',
+            description=f'Withdrawal attempt outside window: {status["status"]}',
+            ip_address=get_client_ip(request)
+        )
+
+        return redirect('XMR:account')
+
+    # ===== CONTINUE WITH EXISTING WITHDRAWAL LOGIC =====
+    amount = request.POST.get('amount')
+    payment_method = request.POST.get('payment_method', 'MPESA')
+    phone_number = request.POST.get('phone_number', '').strip()
+    bank_details = request.POST.get('bank_details', '').strip()
+
+    wallet = request.user.wallet
+
+    # Validate amount
+    try:
+        amount = Decimal(amount)
+        min_withdrawal = SystemConfig.get_config('min_withdrawal', 500)
+
+        if amount < min_withdrawal:
+            messages.error(request, f'Minimum withdrawal is {min_withdrawal} KSH')
+            return redirect('XMR:account')
+
+        # CHECK AVAILABLE BALANCE ONLY (balance field)
+        if wallet.balance < amount:
+            messages.error(
+                request,
+                f'Insufficient available balance. You have {wallet.balance} KSH available, but requested {amount} KSH.'
+            )
+            return redirect('XMR:account')
+
+    except (TypeError, ValueError, InvalidOperation):
+        messages.error(request, 'Invalid amount')
+        return redirect('XMR:account')
+
+    # Validate based on payment method
+    if payment_method == 'MPESA':
+        phone_number = clean_phone_number(phone_number)
+        if not validate_phone_number(phone_number):
+            messages.error(request, 'Please enter a valid Kenyan phone number for M-Pesa withdrawal')
+            return redirect('XMR:account')
+    elif payment_method == 'BANK':
+        if not bank_details:
+            messages.error(request, 'Please provide bank account details')
+            return redirect('XMR:account')
+
+    try:
+        # Create withdrawal request
+        withdrawal = WithdrawalRequest.objects.create(
+            user=request.user,
+            amount=amount,
+            payment_method=payment_method,
+            phone_number=phone_number if payment_method == 'MPESA' else None,
+            bank_details=bank_details if payment_method == 'BANK' else None
+        )
+
+        # Get current day name for the success message
+        day_name = timezone.now().strftime('%A')
+        
+        messages.success(
+            request,
+            f'✅ Withdrawal request for {amount} KSH submitted successfully! '
+            f'It will be processed by admin. (Requested on {day_name})'
+        )
+
+        # Log the withdrawal request
+        SystemLog.objects.create(
+            log_type='INFO',
+            user=request.user,
+            action='WITHDRAWAL_CREATED',
+            description=f'Withdrawal request for {amount} KSH created on {day_name}',
+            ip_address=get_client_ip(request)
+        )
+
+    except ValidationError as e:
+        messages.error(request, str(e))
+    except Exception as e:
+        messages.error(request, f'Error creating withdrawal: {str(e)}')
+        logger.error(f"Withdrawal creation error: {str(e)}", exc_info=True)
+
+    return HttpResponseRedirect('/account/?tab=withdrawals')(request):
     """
     Create a new withdrawal request
     ONLY allowed on weekends (Saturday-Sunday) between 8 AM - 5 PM
@@ -1322,7 +1423,6 @@ def cancel_withdrawal(request, withdrawal_id):
     return HttpResponseRedirect('/account/?tab=withdrawals')
 
 
-# ==================== INVESTMENT VIEWS ====================
 @login_required(login_url='XMR:signupin')
 def investments(request):
     """View all available investments with payout schedule information"""
@@ -1414,33 +1514,20 @@ def investments(request):
     withdrawal_status = get_withdrawal_window_status()
     is_withdrawal_open = withdrawal_status['open']
 
-    # Calculate next withdrawal window
-    if is_weekend_now:
-        if is_withdrawal_open:
-            next_withdrawal_window = 'Open now!'
-            next_withdrawal_status = 'open'
-            next_withdrawal_badge = 'success'
-        else:
-            if now.time() < time(8, 0):
-                next_withdrawal_window = f'Today at 8:00 AM'
-                next_withdrawal_status = 'opens_today'
-                next_withdrawal_badge = 'info'
-            else:
-                next_withdrawal_window = 'Next weekend'
-                next_withdrawal_status = 'closed'
-                next_withdrawal_badge = 'secondary'
+    # ===== UPDATED: Calculate next withdrawal window (available EVERY DAY) =====
+    if is_withdrawal_open:
+        next_withdrawal_window = 'Open now!'
+        next_withdrawal_status = 'open'
+        next_withdrawal_badge = 'success'
     else:
-        days_until_saturday = 5 - now.weekday()
-        if days_until_saturday == 1:
-            next_withdrawal_window = 'Tomorrow (Saturday)'
-        elif days_until_saturday == 0:
-            next_withdrawal_window = 'Today (Saturday)'
-        elif days_until_saturday == 2:
-            next_withdrawal_window = 'In 2 days (Saturday)'
+        if now.time() < time(8, 0):
+            next_withdrawal_window = 'Today at 8:00 AM'
+            next_withdrawal_status = 'opens_today'
+            next_withdrawal_badge = 'info'
         else:
-            next_withdrawal_window = f'In {days_until_saturday} days (Saturday)'
-        next_withdrawal_status = 'weekday'
-        next_withdrawal_badge = 'secondary'
+            next_withdrawal_window = 'Tomorrow at 8:00 AM'
+            next_withdrawal_status = 'closed'
+            next_withdrawal_badge = 'secondary'
 
     # ===== EARNING PROJECTIONS =====
     projected_earnings = 0
@@ -1509,11 +1596,11 @@ def investments(request):
         'payout_schedule': 'Monday - Friday (Weekdays only)',
         'payout_weekend_note': 'Weekends are paused - earnings resume on Monday',
 
-        # Withdrawal schedule
+        # ===== UPDATED: Withdrawal schedule (available every day) =====
         'withdrawal_window': withdrawal_status,
         'is_withdrawal_open': is_withdrawal_open,
         'withdrawal_status_message': withdrawal_status['message'],
-        'withdrawal_schedule': 'Saturday - Sunday, 8:00 AM - 5:00 PM',
+        'withdrawal_schedule': 'Every day, 8:00 AM - 5:00 PM',  # Changed
         'withdrawal_opens_at': withdrawal_status.get('opens_at', '8:00 AM'),
         'withdrawal_closes_at': withdrawal_status.get('closes_at', '5:00 PM'),
         'next_withdrawal_window': next_withdrawal_window,
@@ -1530,11 +1617,11 @@ def investments(request):
 
         # Helpful messages
         'payout_help_text': 'Daily earnings are processed on business days (Monday-Friday). Weekends are automatically paused.',
-        'withdrawal_help_text': 'Withdrawals are only available on weekends (Saturday-Sunday) from 8:00 AM to 5:00 PM.',
+        # ===== UPDATED: Withdrawal help text =====
+        'withdrawal_help_text': 'Withdrawals are available every day from 8:00 AM to 5:00 PM.',
     }
 
     return render(request, 'investments.html', context)
-
 
 @login_required(login_url='XMR:signupin')
 def investment_detail(request, token_id):
