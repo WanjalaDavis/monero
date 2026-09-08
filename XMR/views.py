@@ -1173,9 +1173,6 @@ def create_deposit(request):
     
     return HttpResponseRedirect('/account/?tab=deposits')
 
-
-# ==================== WITHDRAWAL VIEWS ====================
-@login_required(login_url='XMR:signupin')
 # ==================== WITHDRAWAL VIEWS ====================
 @login_required(login_url='XMR:signupin')
 def create_withdrawal(request):
