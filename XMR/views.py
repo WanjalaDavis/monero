@@ -1289,110 +1289,8 @@ def create_withdrawal(request):
         messages.error(request, f'Error creating withdrawal: {str(e)}')
         logger.error(f"Withdrawal creation error: {str(e)}", exc_info=True)
 
-    return HttpResponseRedirect('/account/?tab=withdrawals')(request):
-    """
-    Create a new withdrawal request
-    ONLY allowed on weekends (Saturday-Sunday) between 8 AM - 5 PM
-    """
-    if request.method != 'POST':
-        return redirect('XMR:account')
-
-    # ===== WITHDRAWAL WINDOW CHECK =====
-    is_open, message = is_withdrawal_window()
-
-    if not is_open:
-        # Get detailed status for better error message
-        status = get_withdrawal_window_status()
-        error_message = f"""
-        ❌ Withdrawals are only available on weekends (Saturday-Sunday) from 8:00 AM to 5:00 PM.
-
-        Current Status: {status['status']}
-        {status['message']}
-
-        Window Hours: {status['opens_at']} - {status['closes_at']}
-        """
-        messages.error(request, error_message)
-
-        # Log the attempt
-        SystemLog.objects.create(
-            log_type='WARNING',
-            user=request.user,
-            action='WITHDRAWAL_ATTEMPT_OUTSIDE_WINDOW',
-            description=f'Withdrawal attempt outside window: {status["status"]}',
-            ip_address=get_client_ip(request)
-        )
-
-        return redirect('XMR:account')
-
-    # ===== CONTINUE WITH EXISTING WITHDRAWAL LOGIC =====
-    amount = request.POST.get('amount')
-    payment_method = request.POST.get('payment_method', 'MPESA')
-    phone_number = request.POST.get('phone_number', '').strip()
-    bank_details = request.POST.get('bank_details', '').strip()
-
-    wallet = request.user.wallet
-
-    # Validate amount
-    try:
-        amount = Decimal(amount)
-        min_withdrawal = SystemConfig.get_config('min_withdrawal', 500)
-
-        if amount < min_withdrawal:
-            messages.error(request, f'Minimum withdrawal is {min_withdrawal} KSH')
-            return redirect('XMR:account')
-
-        # CHECK AVAILABLE BALANCE ONLY (balance field)
-        if wallet.balance < amount:
-            messages.error(
-                request,
-                f'Insufficient available balance. You have {wallet.balance} KSH available, but requested {amount} KSH.'
-            )
-            return redirect('XMR:account')
-
-    except (TypeError, ValueError, InvalidOperation):
-        messages.error(request, 'Invalid amount')
-        return redirect('XMR:account')
-
-    # Validate based on payment method
-    if payment_method == 'MPESA':
-        phone_number = clean_phone_number(phone_number)
-        if not validate_phone_number(phone_number):
-            messages.error(request, 'Please enter a valid Kenyan phone number for M-Pesa withdrawal')
-            return redirect('XMR:account')
-    elif payment_method == 'BANK':
-        if not bank_details:
-            messages.error(request, 'Please provide bank account details')
-            return redirect('XMR:account')
-
-    try:
-        # Create withdrawal request
-        withdrawal = WithdrawalRequest.objects.create(
-            user=request.user,
-            amount=amount,
-            payment_method=payment_method,
-            phone_number=phone_number if payment_method == 'MPESA' else None,
-            bank_details=bank_details if payment_method == 'BANK' else None
-        )
-
-        messages.success(request,
-                         f'✅ Withdrawal request for {amount} KSH submitted successfully! It will be processed by admin.')
-
-        # Log the withdrawal request
-        SystemLog.objects.create(
-            log_type='INFO',
-            user=request.user,
-            action='WITHDRAWAL_CREATED',
-            description=f'Withdrawal request for {amount} KSH created (Weekend window)',
-            ip_address=get_client_ip(request)
-        )
-
-    except ValidationError as e:
-        messages.error(request, str(e))
-    except Exception as e:
-        messages.error(request, f'Error creating withdrawal: {str(e)}')
-        logger.error(f"Withdrawal creation error: {str(e)}", exc_info=True)
-
     return HttpResponseRedirect('/account/?tab=withdrawals')
+
 
 @login_required(login_url='XMR:signupin')
 def cancel_withdrawal(request, withdrawal_id):
@@ -1418,7 +1316,6 @@ def cancel_withdrawal(request, withdrawal_id):
         messages.error(request, str(e))
     
     return HttpResponseRedirect('/account/?tab=withdrawals')
-
 
 @login_required(login_url='XMR:signupin')
 def investments(request):
