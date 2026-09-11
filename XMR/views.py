@@ -898,7 +898,7 @@ def account(request):
     paybill = SystemConfig.get_config('mpesa_paybill', '345678')
     account_no = SystemConfig.get_config('mpesa_account', request.user.username)
     min_deposit = SystemConfig.get_config('min_deposit', 1200)
-    min_withdrawal = SystemConfig.get_config('min_withdrawal', 500)
+    min_withdrawal = SystemConfig.get_config('min_withdrawal', 200)
 
     # Current date for greeting
     current_date = timezone.now()
@@ -1226,7 +1226,7 @@ def create_withdrawal(request):
     # Validate amount
     try:
         amount = Decimal(amount)
-        min_withdrawal = SystemConfig.get_config('min_withdrawal', 500)
+        min_withdrawal = SystemConfig.get_config('min_withdrawal', 200)
 
         if amount < min_withdrawal:
             messages.error(request, f'Minimum withdrawal is {min_withdrawal} KSH')
@@ -1992,7 +1992,7 @@ def myadmin(request):
     
     default_configs = {
         'min_deposit': 1200,
-        'min_withdrawal': 500,
+        'min_withdrawal': 200,
         'withdrawal_tax': 5,
         'referral_commission': 5,
         'mpesa_paybill': '123456',
@@ -3544,7 +3544,7 @@ def initialize_system(request):
         # Create default system configs
         default_configs = {
             'min_deposit': 1200,
-            'min_withdrawal': 500,
+            'min_withdrawal': 200,
             'withdrawal_tax': 5,
             'referral_commission': 5,
             'mpesa_paybill': '2345678',
